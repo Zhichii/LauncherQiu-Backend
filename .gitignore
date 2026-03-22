@@ -1,0 +1,15 @@
+Build/
+
+__pycache__/
+*.py[cod]
+
+*.obj
+*.o
+*.exe
+*.dll
+*.lib
+*.exp
+*.ilk
+*.pdb
+
+.vs/

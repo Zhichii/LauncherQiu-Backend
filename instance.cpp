@@ -1,7 +1,6 @@
 #include "instance.hpp"
 
 #include <fstream>
-#include <jsoncpp/json/json.h>
 #include <minizip/unzip.h>
 #include "config.hpp"
 #include "strings.hpp"

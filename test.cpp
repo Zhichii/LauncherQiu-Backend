@@ -2,11 +2,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <jsoncpp/json/json.h>
+#include "json_compat.hpp"
 
 //#include "instance.hpp"
 #include <minizip/unzip.h>
-#include <minizip/mz_zip.h>
 //#include <minizip/mz.h>
 
 class Minecraft {
@@ -58,7 +57,7 @@ int main() {
 
     std::filesystem::path temp = "/mnt/80E8EEBFE8EEB298/Minecraft/.minecraft/libraries/org/lwjgl/lwjgl-opengl/3.4.1/lwjgl-opengl-3.4.1-natives-linux.jar";
     //void *zip_file = mz_zip_create();
-    unzFile zipfile = unzOpen(temp.c_str());
+    unzFile zipfile = unzOpen(temp.string().c_str());
     unzGoToFirstFile(zipfile);
     while (unzGoToNextFile(zipfile) == UNZ_OK) {
         unz_file_info info;
@@ -73,8 +72,8 @@ int main() {
             unzReadCurrentFile(zipfile, buf, 1048575);
             std::ofstream ofs;
             ofs.open(std::filesystem::path(name_s).filename());
-            ofs.write(buf, unzTell(zipfile));
-            delete buf;
+            ofs.write(buf, unztell(zipfile));
+            delete[] buf;
             ofs.close();
             unzCloseCurrentFile(zipfile);
         }

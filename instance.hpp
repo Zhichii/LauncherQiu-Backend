@@ -1,6 +1,6 @@
 #pragma once
 #include <filesystem>
-#include <jsoncpp/json/json.h>
+#include "json_compat.hpp"
 
 class Instance {
 public:
