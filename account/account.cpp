@@ -208,6 +208,28 @@ std::string makeTempToken() {
     return std::to_string(now) + "_" + randomHexString(8);
 }
 
+std::string getenvString(const char* name) {
+    const char* value = std::getenv(name);
+    if (value == nullptr) {
+        return {};
+    }
+    return value;
+}
+
+OAuthConfig resolveOAuthConfig(OAuthConfig config) {
+    if (config.client_id.empty()) {
+        config.client_id = getenvString("LAUNCHERQIU_AZURE_CLIENT_ID");
+    }
+    if (config.client_id.empty()) {
+        config.client_id = getenvString("AZURE_CLIENT_ID");
+    }
+    if (config.client_id.empty()) {
+        throw std::runtime_error(
+            "Missing Microsoft client ID; set OAuthConfig.client_id or env LAUNCHERQIU_AZURE_CLIENT_ID");
+    }
+    return config;
+}
+
 std::filesystem::path writeTempFile(const std::string& suffix,
                                     const std::string& content) {
     const auto path =
@@ -645,14 +667,15 @@ Json::Value MicrosoftAccount::toJson() const {
 }
 
 LoginSession createMicrosoftLoginSession(const OAuthConfig& config) {
+    const OAuthConfig resolved = resolveOAuthConfig(config);
     LoginSession session;
     session.state = randomHexString(16);
     session.auth_url =
         "https://login.live.com/oauth20_authorize.srf"
-        "?client_id=" + urlEncode(config.client_id) +
+        "?client_id=" + urlEncode(resolved.client_id) +
         "&response_type=code"
-        "&redirect_uri=" + urlEncode(config.redirect_uri) +
-        "&scope=" + urlEncode(config.scope) +
+        "&redirect_uri=" + urlEncode(resolved.redirect_uri) +
+        "&scope=" + urlEncode(resolved.scope) +
         "&state=" + urlEncode(session.state) +
         "&prompt=select_account";
     return session;
@@ -683,7 +706,8 @@ OAuthCallback parseCallbackUrl(const std::string& callback_url,
 OAuthCallback waitForOAuthCallback(const OAuthConfig& config,
                                    const std::string& expected_state,
                                    std::chrono::seconds timeout) {
-    const ParsedHttpUrl redirect = parseHttpUrl(config.redirect_uri);
+    const OAuthConfig resolved = resolveOAuthConfig(config);
+    const ParsedHttpUrl redirect = parseHttpUrl(resolved.redirect_uri);
     if (redirect.host != "localhost" && redirect.host != "127.0.0.1") {
         throw std::runtime_error("Redirect URI host must be localhost or 127.0.0.1");
     }
@@ -761,9 +785,9 @@ OAuthCallback waitForOAuthCallback(const OAuthConfig& config,
     }
 
     const std::string success_html =
-        readFileOrFallback(config.success_page, defaultSuccessPage());
+        readFileOrFallback(resolved.success_page, defaultSuccessPage());
     const std::string error_html =
-        readFileOrFallback(config.error_page, defaultErrorPage());
+        readFileOrFallback(resolved.error_page, defaultErrorPage());
     const std::string response_text = httpResponseText(
         callback.success ? success_html : error_html,
         callback.success ? "200 OK" : "400 Bad Request");
@@ -782,14 +806,15 @@ OAuthCallback waitForOAuthCallback(const OAuthConfig& config,
 
 MicrosoftAccount completeMicrosoftAuth(const std::string& code,
                                        const OAuthConfig& config) {
+    const OAuthConfig resolved = resolveOAuthConfig(config);
     long status_code = 0;
     const Json::Value microsoft_token = postFormJson(
         "https://login.live.com/oauth20_token.srf",
         {
-            { "client_id", config.client_id },
+            { "client_id", resolved.client_id },
             { "code", code },
             { "grant_type", "authorization_code" },
-            { "redirect_uri", config.redirect_uri },
+            { "redirect_uri", resolved.redirect_uri },
         },
         &status_code);
 
@@ -829,38 +854,41 @@ MicrosoftAccount completeMicrosoftAuthFromCallbackUrl(
     const std::string& callback_url,
     const OAuthConfig& config,
     const std::string& expected_state) {
+    const OAuthConfig resolved = resolveOAuthConfig(config);
     const OAuthCallback callback = parseCallbackUrl(callback_url, expected_state);
     if (!callback.success) {
         throw std::runtime_error(callback.error.empty() ? "Login failed" : callback.error);
     }
-    return completeMicrosoftAuth(callback.code, config);
+    return completeMicrosoftAuth(callback.code, resolved);
 }
 
 MicrosoftAccount loginMicrosoft(const OAuthConfig& config,
                                 std::chrono::seconds timeout) {
-    const LoginSession session = createMicrosoftLoginSession(config);
+    const OAuthConfig resolved = resolveOAuthConfig(config);
+    const LoginSession session = createMicrosoftLoginSession(resolved);
     if (!openBrowser(session.auth_url)) {
         throw std::runtime_error("Failed to open browser");
     }
 
     const OAuthCallback callback =
-        waitForOAuthCallback(config, session.state, timeout);
+        waitForOAuthCallback(resolved, session.state, timeout);
     if (!callback.success) {
         throw std::runtime_error(callback.error.empty() ? "Login failed" : callback.error);
     }
-    return completeMicrosoftAuth(callback.code, config);
+    return completeMicrosoftAuth(callback.code, resolved);
 }
 
 MicrosoftAccount refreshMicrosoftAccount(const std::string& refresh_token,
                                          const OAuthConfig& config) {
+    const OAuthConfig resolved = resolveOAuthConfig(config);
     long status_code = 0;
     const Json::Value microsoft_token = postFormJson(
         "https://login.live.com/oauth20_token.srf",
         {
-            { "client_id", config.client_id },
+            { "client_id", resolved.client_id },
             { "refresh_token", refresh_token },
             { "grant_type", "refresh_token" },
-            { "scope", config.scope },
+            { "scope", resolved.scope },
         },
         &status_code);
 

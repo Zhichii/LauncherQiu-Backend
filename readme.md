@@ -25,6 +25,10 @@ LauncherQiu 是一个 Minecraft 游戏启动器后端项目
 - Minecraft 官方账号验证
 - 本地 HTTP 回调服务器处理登录流程
 
+Microsoft 登录不会在源码中内置 `client_id`。
+运行登录流程前，需要由调用方传入 `OAuthConfig.client_id`，或设置环境变量
+`LAUNCHERQIU_AZURE_CLIENT_ID`（兼容 `AZURE_CLIENT_ID`）。
+
 ### 实例管理 (`instance.cpp`)
 - 解析 Minecraft 版本清单 (version.json)
 - 处理库文件依赖

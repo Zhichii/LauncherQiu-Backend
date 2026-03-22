@@ -12,8 +12,7 @@
 namespace Account {
 
 struct OAuthConfig {
-    // Clienid here , this is imagine launcher client id, you need to register your own client id for production use
-    std::string client_id = "d0c7a28a-ec25-4910-97ef-5cdabade8891"; 
+    std::string client_id;
     std::string redirect_uri = "http://localhost:23456/auth/callback";
     std::string scope = "XboxLive.signin offline_access";
     std::filesystem::path success_page = "account/pages/success.html";
