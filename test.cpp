@@ -4,10 +4,7 @@
 #include <iostream>
 #include <jsoncpp/json/json.h>
 
-//#include "instance.hpp"
-#include <minizip/unzip.h>
-#include <minizip/mz_zip.h>
-//#include <minizip/mz.h>
+#include "instance.hpp"
 
 class Minecraft {
     std::filesystem::path _path;
@@ -52,32 +49,7 @@ int main() {
     }
     */
 
-    //Instance inst("/mnt/80E8EEBFE8EEB298/Minecraft/.minecraft", "Release-OptiFine");
+    Instance inst("/mnt/80E8EEBFE8EEB298/Minecraft/.minecraft", "Release-OptiFine");
+    std::cout << inst._id << std::endl;
 
-    Json::Value v;
-
-    std::filesystem::path temp = "/mnt/80E8EEBFE8EEB298/Minecraft/.minecraft/libraries/org/lwjgl/lwjgl-opengl/3.4.1/lwjgl-opengl-3.4.1-natives-linux.jar";
-    //void *zip_file = mz_zip_create();
-    unzFile zipfile = unzOpen(temp.c_str());
-    unzGoToFirstFile(zipfile);
-    while (unzGoToNextFile(zipfile) == UNZ_OK) {
-        unz_file_info info;
-        char name[128];
-        char extra[4096];
-        char comment[4096];
-        unzGetCurrentFileInfo(zipfile, &info, name, 127, extra, 4095, comment, 4095);
-        std::string name_s = name;
-        if (name_s.ends_with(".lib") || name_s.ends_with(".so")) {
-            unzOpenCurrentFile(zipfile);
-            char* buf = new char[1048576];
-            unzReadCurrentFile(zipfile, buf, 1048575);
-            std::ofstream ofs;
-            ofs.open(std::filesystem::path(name_s).filename());
-            ofs.write(buf, unzTell(zipfile));
-            delete buf;
-            ofs.close();
-            unzCloseCurrentFile(zipfile);
-        }
-    }
-    unzClose(zipfile);
 };

@@ -62,10 +62,10 @@ Instance::Rule::Rule(Json::Value json) {
     }
 }
 
-bool Instance::Rule::isAllow(std::vector<Feature> features) const {
+bool Instance::Rule::allow(std::vector<Feature> features) const {
     bool allow = 0;
-    if(this->_os_name == OS_NAME || this->_os_version == "") allow = 1;
-    if(!this->_action) allow = !allow;
+    if (this->_os_name == OS_NAME || this->_os_version == "") allow = 1;
+    if (!this->_action) allow = !allow;
     for (auto& i : this->_features) {
         bool found = false;
         bool v = false;
@@ -110,10 +110,11 @@ Instance::LibraryItem::LibraryItem(Json::Value json) {
     }
 }
 
-bool Instance::LibraryItem::extractNatives(std::filesystem::path game_dir, std::string instance_name) {
+bool Instance::LibraryItem::extractNatives(std::filesystem::path minecraft_path, std::string instance_name) {
     if (this->_natives.size()==0) return false;
-    std::filesystem::path nativePath = game_dir / "libraries" / (this->_classifiers[this->_natives[OS_NAME]].path());
-    std::filesystem::path extractPath = game_dir / "versions" / instance_name / (instance_name+"-natives");
+    std::filesystem::path nativePath = minecraft_path / "libraries" / (this->_classifiers[this->_natives[OS_NAME]].path());
+    std::filesystem::path extractPath = minecraft_path / "versions" / instance_name / (instance_name+"-natives");
+    // TODO: Error detection
     unzFile zipfile = unzOpen(nativePath.c_str());
     unzGoToFirstFile(zipfile);
     while (unzGoToNextFile(zipfile) == UNZ_OK) {
@@ -146,7 +147,111 @@ std::string Instance::LibraryItem::name() {
     return Strings::join(name_split, ":");
 }
 
+std::filesystem::path Instance::LibraryItem::finalLibPath(std::filesystem::path minecraft_path) {
+    std::filesystem::path path = minecraft_path / "libraries";
+    if (this->_artifact.path() != "") {
+        path = path / this->_artifact.path();
+    }
+    else if (this->_natives.size() > 0) {
+        path = path / this->_classifiers[this->_natives[OS_NAME]].path();
+    }
+    else {
+        std::vector<std::string> name_split = Strings::split(this->_name, ":");
+        // 认为name_split.size()==3的举手
+        std::string org = name_split[0];
+        org = Strings::replace_all(org, ".", "/");
+        std::string artifact = name_split[1];
+        std::string version = name_split[1];
+        path = path / org / artifact / version / (artifact+"-"+version+".jar");
+    }
+    return path;
+}
 
+bool Instance::LibraryItem::allow(std::vector<Rule::Feature> features) {
+    for (Rule& i : _rules) {
+        if (!i.allow(features)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+Instance::ArgumentItem::ArgumentItem(Json::Value json) {
+    if (json.isString()) {
+        this->_value = { json.asString() };
+    }
+    else {
+        for (const auto& i : json["value"]) {
+            this->_value.push_back(i.asString());
+        }
+        if (json.isMember("rules")) {
+            for (const auto& i : json["rules"]) {
+                this->_rules.push_back(i);
+            }
+        }
+    }
+}
+
+bool Instance::ArgumentItem::allow(std::vector<Rule::Feature> features) {
+    for (Rule& i : this->_rules) {
+        if (!i.allow(features)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::vector<std::string> Instance::ArgumentItem::value() { return this->_value; }
+
+void Instance::init(Json::Value info) {
+    this->_id = info["id"].asString();
+    this->_main_class = info["mainClass"].asString();
+    this->_asset_index = File(info["assetIndex"]);
+    this->_asset_index_total_size= info["assetIndex"]["totalSize"].asInt64();
+    this->_asset_index_id = info["assetIndex"]["id"].asString();
+    this->_compliance_level= info["complianceLevel"].asInt();
+    this->_java_version = info["javaVersion"]["majorVersion"].asInt();
+    Json::Value downloads = info["downloads"];
+    if (downloads.isMember("client_mappings")) {
+        this->_client_mappings = File(downloads["client_mappings"]);
+        this->_server_mappings = File(downloads["server_mappings"]);
+    }
+    this->_client = File(downloads["client"]);
+    this->_server = File(downloads["server"]);
+    if (info.isMember("logging")) {
+        if (info["logging"].isMember("client")) {
+            this->_logging_file = File(info["logging"]["client"]["file"]);
+            this->_logging_id = info["logging"]["client"]["file"]["id"].asString();
+            this->_logging_argument = info["logging"]["client"]["argument"].asString();
+        }
+    }
+    else {
+        this->_logging_file = {};
+        this->_logging_id = {};
+        this->_logging_argument = {};
+    }
+    this->_game_type = info["type"].asString();
+    if (info.isMember("arguments")) {
+        for (size_t i = 0; i < info["arguments"]["game"].size(); i ++) {
+            this->_game_arguments.push_back(info["arguments"]["game"][(int)i]);
+        }
+        for (size_t i = 0; i < info["arguments"]["jvm"].size(); i++) {
+            this->_jvm_arguments.push_back(info["arguments"]["jvm"][(int)i]);
+        }
+    }
+    if (info.isMember("minecraftArguments")) {
+        this->_legacy_game_arguments = info["minecraftArguments"].asString();
+        this->_jvm_arguments = { Json::Value("-cp"), Json::Value("${classpath}") };
+    }
+    if (info.isMember("patches") &&
+        (info["patches"].size() > 0)) {
+    //	this->_patches = new VersionInfo(info["patches"][0]);
+    }
+    this->_patches = nullptr;
+    for (Json::Value i : info["libraries"]) {
+        this->_libraries.push_back(i);
+    }
+}
 
 Instance::Instance(std::filesystem::path minecraft_path, std::string version) {
     if (std::filesystem::exists(minecraft_path / "versions" / version / (version+".json")) && std::filesystem::is_regular_file(minecraft_path / "versions" / version / (version+".json")));
@@ -156,5 +261,6 @@ Instance::Instance(std::filesystem::path minecraft_path, std::string version) {
     Json::String errs;
     Json::Value root;
     Json::parseFromStream(builder, ifs, &root, &errs);
+    this->init(root);
 }
 

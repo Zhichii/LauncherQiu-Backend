@@ -31,7 +31,7 @@ namespace Strings {
 
 	// Slice the string as Python. 
 	// Include head without tail. 
-	std::string sliceN(const std::string& baseStr, size_t from = 0, size_t to = 0, long long step = 1) {
+	inline std::string sliceN(const std::string& baseStr, size_t from = 0, size_t to = 0, long long step = 1) {
 		std::string newStr;
 		if (from == to) to = baseStr.size() - to;
 		if (from < 0) from = baseStr.size() + from;
@@ -47,7 +47,7 @@ namespace Strings {
 
 	// Slice the string as Python, but step is always 1. 
 	// Include head without tail. 
-	std::string slice1(const std::string& baseStr, long long from = 0, long long to = 0) {
+	inline std::string slice1(const std::string& baseStr, long long from = 0, long long to = 0) {
 		if (from == to) to = baseStr.size() - to;
 		if (from < 0) from = baseStr.size() + from;
 		if (to <= 0) to = baseStr.size() + to;
@@ -58,7 +58,7 @@ namespace Strings {
 	}
 
 	// 替换所有 by DeepSeek
-	std::string replace_all(const std::string& str, const std::string& from, const std::string& to) {
+	inline std::string replace_all(const std::string& str, const std::string& from, const std::string& to) {
 		std::ostringstream oss;
 		size_t pos = 0;
 		size_t last_pos = 0;
@@ -72,40 +72,26 @@ namespace Strings {
 		return oss.str();
 	}
 
-	// 分割字符串
-	std::vector<std::string> split(const std::string& baseStr, const std::string& sep) {
-		std::vector<std::string> output;
-		if (baseStr.size() < sep.size()) {
-			output.push_back(baseStr);
-			return output;
-		}
-		const size_t cnt = count(baseStr, sep);
-		const size_t baseLen = baseStr.size();
-		const size_t sepLen = sep.size();
-		size_t cur = 0, curLast = 0;
-		std::string tmp2;
-		for (size_t i = 0; i < baseLen; i++) {
-			for (size_t j = 0; j < sepLen; j++) {
-				if ((i + j) > baseLen) break;
-				if (baseStr[i+j] != sep[j]) {
-					tmp2 += baseStr[i];
-					break;
-				}
-				if (j+1 == sepLen) {
-					output.push_back(tmp2);
-					tmp2 = "";
-					i += j;
-					break;
-				}
-			}
-		}
-		output.push_back(tmp2);
-		return output;
-	}
+	// 分割字符串 by DeepSeek
+	inline std::vector<std::string> split(std::string_view str, std::string_view delim) {
+        if (delim.empty()) return { std::string(str) };
+        
+        std::vector<std::string> result;
+        size_t start = 0;
+        size_t end = 0;
+        
+        while ((end = str.find(delim, start)) != std::string_view::npos) {
+            result.emplace_back(str.substr(start, end - start));
+            start = end + delim.length();
+        }
+        result.emplace_back(str.substr(start));
+        
+        return result;
+    }
 
 	// 连接字符串
 	inline std::string join(const std::vector<std::string>& vec, const std::string& joiner) {
-		if (vec.size() == 0) return "";
+		if (vec.size() == 0) return {};
 		std::ostringstream oss;
 		oss << vec[0];
 		for (size_t i = 1; i < vec.size(); i++) {
@@ -116,9 +102,7 @@ namespace Strings {
 	}
 
     // 取中间 by DeepSeek
-    inline std::string_view between(std::string_view str, 
-                                    std::string_view start, 
-                                    std::string_view end) {
+    inline std::string_view between(std::string_view str, std::string_view start, std::string_view end) {
         size_t start_pos = start.empty() ? 0 : str.find(start);
         if (start_pos == std::string_view::npos) return {};
         
@@ -246,5 +230,3 @@ namespace Strings {
 	*/
 
 }
-
-#endif

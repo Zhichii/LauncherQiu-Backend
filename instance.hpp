@@ -33,7 +33,7 @@ public:
 		};
 		Rule();
 		Rule(Json::Value json);
-        bool isAllow(std::vector<Feature> features) const;
+        bool allow(std::vector<Feature> features) const;
     };
 	class LibraryItem {
 		std::string _name;
@@ -45,70 +45,39 @@ public:
 		LibraryItem(Json::Value json);
 		bool extractNatives(std::filesystem::path game_dir, std::string instance_name);
 		std::string name(); // 和_name不一样的是，这个会去除版本，只保留真正的名字。
-		std::filesystem::path finalLibPath(std::filesystem::path game_dir) {
-			std::filesystem::path path = game_dir;
-			if (this->_artifact.path() != "") {
-				path = path / "libraries" / this->_artifact.path();
-			}
-			else if (this->_natives.size() > 0) {
-				libPath = Strings::strFormat("libraries\\%s", this->cn[this->nn[SYS_NAME]].path().c_str());
-				for (char& i : libPath) if(i == O_PATHSEP[0]) i = PATHSEP[0];
-			}
-			else{
-				std::vector<std::string> libNameSplit = Strings::split(this->n,":");
-				libPath = this->n;
-				bool f = 1;
-				for (char& i : libPath) {
-					if(f && i=='.') i = PATHSEP[0];
-					if(i==':') {
-						f = 0;
-						i = PATHSEP[0];
-					}
-				}
-				libPath = Strings::strFormat("libraries\\%s\\%s-%s.jar",
-					libPath.c_str(), libNameSplit[1].c_str(), libNameSplit[2].c_str());
-				for (char& i : libPath) if(i == O_PATHSEP[0]) i = PATHSEP[0];
-			}
-			return libPath;
-		}
-		bool allow(std::vector<Rule::Feature> features) {
-			for (Rule& i : r) {
-				if(!i.isAllow(features)) {
-					return false;
-				}
-			}
-			return true;
-		}
+		std::filesystem::path finalLibPath(std::filesystem::path game_dir);
+		bool allow(std::vector<Rule::Feature> features);
 	};
 	class ArgumentItem {
-		std::vector<std::string> v;
-		std::vector<Rule> r;
+		std::vector<std::string> _value;
+		std::vector<Rule> _rules;
 	public:
-		ArgumentItem(Json::Value json) {
-			if(json.type() == Json::stringValue) {
-				this->v = { json.asString() };
-			}
-			else {
-				for (const auto& i : json["value"]) {
-					this->v.push_back(i.asString());
-				}
-				if(json.isMember("rules")) {
-					for (const auto& i : json["rules"]) {
-						this->r.push_back(i);
-					}
-				}
-			}
-		}
-		[[nodiscard]] bool allow(std::vector<Rule::Feature> features) {
-			for (Rule& i : this->r) {
-				if(!i.isAllow(features)) {
-					return false;
-				}
-			}
-			return true;
-		}
-		std::vector<std::string> value() { return this->v; }
+		ArgumentItem(Json::Value json);
+		bool allow(std::vector<Rule::Feature> features);
+		std::vector<std::string> value();
 	};
+public: // test purpose
+	std::string _id;
+	std::string _main_class;
+	File _asset_index;
+	long long _asset_index_total_size;
+	std::string _asset_index_id;
+	int _compliance_level;
+	int _java_version;
+	File _client;
+	File _server;
+	File _client_mappings;
+	File _server_mappings;
+	File _logging_file;
+	std::string _logging_id;
+	std::string _logging_argument;
+	std::string _game_type;
+	std::vector<LibraryItem> _libraries;
+	std::vector<ArgumentItem> _game_arguments;
+	std::string _legacy_game_arguments;
+	std::vector<ArgumentItem> _jvm_arguments;
+	Instance* _patches;
+	void init(Json::Value info);
 public:
     Instance(std::filesystem::path minecraft_path, std::string version);
 };

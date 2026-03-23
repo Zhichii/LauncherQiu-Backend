@@ -3,7 +3,7 @@ import sys
 def compile(name):
     os.system(f"g++ -c {name}.cpp -std=c++20 -o Build/{name}.o")
 others = ["./libs/json_reader.o","./libs/json_value.o","./libs/json_writer.o"]
-allllllllll = ["test"]
+allllllllll = ["test", "instance"]
 if len(sys.argv) < 2:
     pass
 elif sys.argv[1] == 'all':
