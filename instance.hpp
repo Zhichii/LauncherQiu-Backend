@@ -76,8 +76,9 @@ public: // test purpose
 	std::vector<ArgumentItem> _game_arguments;
 	std::string _legacy_game_arguments;
 	std::vector<ArgumentItem> _jvm_arguments;
-	Instance* _patches;
+	std::vector<std::unique_ptr<Instance>> _patches;
 	void init(Json::Value info);
 public:
     Instance(std::filesystem::path minecraft_path, std::string version);
+    Instance(Json::Value& json);
 };

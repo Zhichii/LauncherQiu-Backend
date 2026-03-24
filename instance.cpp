@@ -27,7 +27,7 @@ std::string Instance::File::sha1() const { return this->_sha1; }
 
 size_t Instance::File::size() const { return this->_size; }
 
-std::string Instance::File::path() const { return this->_url; }
+std::string Instance::File::path() const { return this->_path; }
 
 Instance::Rule::Feature::Feature(std::string name, bool value) {
     this->_name = name;
@@ -117,7 +117,8 @@ bool Instance::LibraryItem::extractNatives(std::filesystem::path minecraft_path,
     // TODO: Error detection
     unzFile zipfile = unzOpen(nativePath.c_str());
     unzGoToFirstFile(zipfile);
-    while (unzGoToNextFile(zipfile) == UNZ_OK) {
+    std::filesystem::create_directories(extractPath);
+    do {
         unz_file_info info;
         char name[128];
         char extra[4096];
@@ -127,24 +128,27 @@ bool Instance::LibraryItem::extractNatives(std::filesystem::path minecraft_path,
         if (name_s.ends_with(".lib") || name_s.ends_with(".so")) {
             unzOpenCurrentFile(zipfile);
             char* buf = new char[1048576];
-            unzReadCurrentFile(zipfile, buf, 1048575);
+            int len = unzReadCurrentFile(zipfile, buf, 1048575);
             std::ofstream ofs;
-            ofs.open(std::filesystem::path(name_s).filename());
-            ofs.write(buf, unzTell(zipfile));
-            delete buf;
+            ofs.open(extractPath / (std::filesystem::path(name_s).filename()));
+            ofs.write(buf, len);
+            delete[] buf;
             ofs.close();
             unzCloseCurrentFile(zipfile);
         }
-    }
+    } while (unzGoToNextFile(zipfile) == UNZ_OK);
     unzClose(zipfile);
     return true;
 }
 
 std::string Instance::LibraryItem::name() {
-    std::vector<std::string> name_split;
-    name_split = Strings::split(this->_name, ":");
-    name_split.emplace(name_split.begin() + 2); // 这个代表的是版本……大概吧。
-    return Strings::join(name_split, ":");
+    std::vector<std::string> name_split = Strings::split(this->_name, ":");
+    // 认为name_split.size()==3的举手
+    if (name_split.size() != 3) printf("!?qiang gnaiq?!");
+    std::string org = name_split[0];
+    std::string artifact = name_split[1];
+    //std::string version = name_split[2];
+    return org + ":" + artifact;
 }
 
 std::filesystem::path Instance::LibraryItem::finalLibPath(std::filesystem::path minecraft_path) {
@@ -158,10 +162,11 @@ std::filesystem::path Instance::LibraryItem::finalLibPath(std::filesystem::path 
     else {
         std::vector<std::string> name_split = Strings::split(this->_name, ":");
         // 认为name_split.size()==3的举手
+        if (name_split.size() != 3) printf("!?qiang gnaiq?!");
         std::string org = name_split[0];
         org = Strings::replace_all(org, ".", "/");
         std::string artifact = name_split[1];
-        std::string version = name_split[1];
+        std::string version = name_split[2];
         path = path / org / artifact / version / (artifact+"-"+version+".jar");
     }
     return path;
@@ -245,9 +250,10 @@ void Instance::init(Json::Value info) {
     }
     if (info.isMember("patches") &&
         (info["patches"].size() > 0)) {
-    //	this->_patches = new VersionInfo(info["patches"][0]);
+        for (Json::Value& patch : info["patches"]) {
+            this->_patches.push_back(std::make_unique<Instance>(patch));
+        }
     }
-    this->_patches = nullptr;
     for (Json::Value i : info["libraries"]) {
         this->_libraries.push_back(i);
     }
@@ -264,3 +270,6 @@ Instance::Instance(std::filesystem::path minecraft_path, std::string version) {
     this->init(root);
 }
 
+Instance::Instance(Json::Value& json) {
+    this->init(json);
+}

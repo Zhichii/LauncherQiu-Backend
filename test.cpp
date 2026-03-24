@@ -14,7 +14,7 @@ public:
 };
 
 int main() {
-    /*
+    /* 画饼，驱动自己前进：
     try {
         Minecraft minecraft { "/mnt/80E8EEBFE8EEB298/Minecraft" };
         // 读取目录versions，每个folder，读取json，每个json，解析。
@@ -49,7 +49,7 @@ int main() {
     }
     */
 
-    Instance inst("/mnt/80E8EEBFE8EEB298/Minecraft/.minecraft", "Release-OptiFine");
-    std::cout << inst._id << std::endl;
+    Instance inst("/mnt/80E8EEBFE8EEB298/Minecraft/.minecraft", "1.16.5-Forge-OptiFine");
+    std::cout << inst._patches[0]->_id << std::endl;
 
 };
