@@ -47,7 +47,7 @@ public:
 		};
 		Rule();
 		Rule(Json::Value json);
-        bool allow(std::vector<Feature> features) const;
+        void act(bool& allow, std::vector<Feature> features) const;
     };
 	class LibraryItem {
 		std::string _name;
@@ -70,6 +70,7 @@ public:
 		bool allow(std::vector<Rule::Feature> features);
 		std::vector<std::string> value();
 	};
+private:
 	std::filesystem::path _minecraft_path;
 	std::string _instance_name;
 	std::string _id;
@@ -93,7 +94,6 @@ public:
 	std::vector<ArgumentItem> _jvm_arguments;
 	std::vector<std::unique_ptr<Instance>> _patches;
 	void init(Json::Value info);
-public: // test purpose only
 	std::string generateClassPath(const std::vector<Rule::Feature>& features);
 	std::string generateJVMArguments(const std::vector<Rule::Feature>& features, std::map<std::string,std::string>& jvm_values);
 	std::string generateGameArguments(const std::vector<Rule::Feature>& features, std::map<std::string, std::string>& game_values);
@@ -104,5 +104,5 @@ public:
 	const std::string& instanceName();
 	const std::string& id();
 	const std::string& type();
-	std::string generateLaunchCommand(std::string& output, InstanceContext& context, AccountsManager& account_manager, JavaManager& java_manager, const std::vector<Rule::Feature> features);
+	std::string generateLaunchCommand(InstanceContext& context, AccountsManager& account_manager, JavaManager& java_manager, const std::vector<Rule::Feature> features);
 };

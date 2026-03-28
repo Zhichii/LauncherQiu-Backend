@@ -40,9 +40,9 @@ bool Instance::Rule::Feature::value() const { return _value; }
 
 Instance::Rule::Rule() {
     _action = true;
-    _os_name = "unknown";
+    _os_name = "";
     _os_version = "";
-    _os_arch = "x64";
+    _os_arch = "";
     _features = {};
 }
 
@@ -70,11 +70,11 @@ Instance::Rule::Rule(Json::Value json) {
     }
 }
 
-bool Instance::Rule::allow(std::vector<Feature> features) const {
-    bool allow = 0;
-    if (_os_name == LAUNCHERQIU_OS_NAME || _os_name == "universal" || _os_name == "") allow = 1;
-    if (_os_arch == LAUNCHERQIU_OS_ARCH || _os_arch == "") allow &= 1;
-    else allow &= 0;
+void Instance::Rule::act(bool& allow, std::vector<Feature> features) const {
+    // 我们需要判断是否处在范围内。
+    if (_os_name != "" && _os_name != LAUNCHERQIU_OS_NAME && _os_name != "universal") return; // 不在范围内。
+    if (_os_arch != LAUNCHERQIU_OS_ARCH && _os_arch != "") return; // 同样不在范围内。
+    // 截至目前，我们仍处在被选择范围内。
     for (auto& i : _features) {
         bool found = false;
         bool v = false;
@@ -85,10 +85,11 @@ bool Instance::Rule::allow(std::vector<Feature> features) const {
                 break;
             }
         }
-        if (!found) allow &= false;
-        else if (v == i.second) allow &= true;
+        if (!found) return; // 我们很遗憾，但我们发现了一个未被支持的feature，故不在选择范围内。
+        else if (v != i.second) return; // 该feature与要求相反，不处在范围内。
     }
-    return _action? allow: !allow;
+    // 确信处在范围内。
+    allow = _action;
 }
 
 Instance::LibraryItem::LibraryItem(Json::Value json) {
@@ -97,6 +98,9 @@ Instance::LibraryItem::LibraryItem(Json::Value json) {
         for (const auto& i : json["rules"]) {
             _rules.push_back(i);
         }
+    }
+    else { // 手动认为allow。
+        _rules.push_back(Rule());
     }
     // 这个natives貌似新版本没有了？不知道。
     if (json.isMember("natives")) {
@@ -124,26 +128,31 @@ bool Instance::LibraryItem::extractNatives(Instance& instance) {
     if (_natives.size() != 0) {
         native_path = instance._minecraft_path / "libraries" / (_classifiers[_natives[LAUNCHERQIU_OS_NAME]].path());
     }
-    else if (Strings::count(_name, "native")) {
+    else if (true) {//Strings::count(_name, "native")) {
         native_path = instance._minecraft_path / "libraries" / (_artifact.path());
     }
     else return false;
     // TODO: Error detection
     unzFile zipfile = unzOpen(native_path.c_str());
-    unzGoToFirstFile(zipfile);
+    if (!zipfile) return false;
+    int err;
+    err = unzGoToFirstFile(zipfile);
+    if (err != UNZ_OK) return false;
     do {
         unz_file_info info;
-        char name[128] = {};
-        char extra[4096] = {};
-        char comment[4096] = {};
-        unzGetCurrentFileInfo(zipfile, &info, name, 127, extra, 4095, comment, 4095);
-        std::string name_s = name;
-        if ((LAUNCHERQIU_OS_NAME == "windows" && name_s.ends_with(".dll")) || ((LAUNCHERQIU_OS_NAME == "linux") && (name_s.ends_with(".so"))) || (LAUNCHERQIU_OS_NAME == "osx" && name_s.ends_with(".jnilib"))) {
+        err = unzGetCurrentFileInfo(zipfile, &info, nullptr, 0, nullptr, 0, nullptr, 0);
+        if (err != UNZ_OK) return false;
+        std::string name(info.size_filename, (char)0);
+        std::string extra(info.size_file_extra, (char)0);
+        std::string comment(info.size_file_comment, (char)0);
+        err = unzGetCurrentFileInfo(zipfile, nullptr, name.data(), info.size_filename, extra.data(), info.size_file_extra, comment.data(), info.size_file_comment);
+        if (err != UNZ_OK) return false;
+        if ((LAUNCHERQIU_OS_NAME == "windows" && name.ends_with(".dll")) || ((LAUNCHERQIU_OS_NAME == "linux") && (name.ends_with(".so"))) || (LAUNCHERQIU_OS_NAME == "osx" && name.ends_with(".jnilib"))) {
             unzOpenCurrentFile(zipfile);
-            char* buf = new char[1048576];
-            int len = unzReadCurrentFile(zipfile, buf, 1048575);
+            char* buf = new char[info.uncompressed_size];
+            int len = unzReadCurrentFile(zipfile, buf, info.uncompressed_size);
             std::ofstream ofs;
-            ofs.open(extract_path / (std::filesystem::path(name_s).filename()));
+            ofs.open(extract_path / (std::filesystem::path(name).filename()));
             ofs.write(buf, len);
             delete[] buf;
             ofs.close();
@@ -177,7 +186,7 @@ std::filesystem::path Instance::LibraryItem::finalLibPath(std::filesystem::path 
     else { // 自己合成
         std::vector<std::string> name_split = Strings::split(_name, ":");
         // 认为name_split.size() >= 3的举手
-        if (name_split.size() >= 3) printf("!?qiang gnaiq?!");
+        if (name_split.size() < 3) printf("!?qiang gnaiq?!");
         std::string org = name_split[0];
         org = Strings::replace_all(org, ".", "/");
         std::string artifact = name_split[1];
@@ -188,17 +197,17 @@ std::filesystem::path Instance::LibraryItem::finalLibPath(std::filesystem::path 
 }
 
 bool Instance::LibraryItem::allow(std::vector<Rule::Feature> features) {
+    bool allow = false;
     for (Rule& i : _rules) {
-        if (!i.allow(features)) {
-            return false;
-        }
+        i.act(allow, features);
     }
-    return true;
+    return allow;
 }
 
 Instance::ArgumentItem::ArgumentItem(Json::Value json) {
     if (json.isString()) {
         _value = { json.asString() };
+        _rules.push_back(Rule());
     }
     else {
         for (const auto& i : json["value"]) {
@@ -209,16 +218,18 @@ Instance::ArgumentItem::ArgumentItem(Json::Value json) {
                 _rules.push_back(i);
             }
         }
+        else { // 手动认为allow。
+            _rules.push_back(Rule());
+        }
     }
 }
 
 bool Instance::ArgumentItem::allow(std::vector<Rule::Feature> features) {
+    bool allow = false;
     for (Rule& i : _rules) {
-        if (!i.allow(features)) {
-            return false;
-        }
+        i.act(allow, features);
     }
-    return true;
+    return allow;
 }
 
 std::vector<std::string> Instance::ArgumentItem::value() { return _value; }
@@ -277,8 +288,6 @@ void Instance::init(Json::Value info) {
 Instance::Instance(std::filesystem::path minecraft_path, std::string instance_name) {
     _minecraft_path = minecraft_path;
     _instance_name = instance_name;
-    if (std::filesystem::exists(minecraft_path / "versions" / instance_name / (instance_name+".json")) && std::filesystem::is_regular_file(minecraft_path / "versions" / instance_name / (instance_name+".json")));
-    else throw std::runtime_error("manifest not found");
     std::ifstream ifs(minecraft_path / "versions" / instance_name / (instance_name+".json"));
     Json::CharReaderBuilder builder;
     Json::String errs;
@@ -312,7 +321,7 @@ std::string Instance::generateClassPath(const std::vector<Rule::Feature>& featur
         library_list.push_back(i.second);
     }
     library_list.push_back(std::filesystem::path("versions") / _instance_name / (_instance_name + ".jar"));
-    return Strings::join(library_list, ":");
+    return Strings::join(library_list, LAUNCHERQIU_CLASSPATH_SEPARATOR);
 }
 
 std::string Instance::generateJVMArguments(const std::vector<Rule::Feature>& features, std::map<std::string,std::string>& jvm_values) {
@@ -321,11 +330,9 @@ std::string Instance::generateJVMArguments(const std::vector<Rule::Feature>& fea
         if (i.allow(features)) {
             for (auto& j : i.value()) {
                 std::string k = j;
-                auto l = Strings::split(k, "=");
-                for (auto& m : l) {
-                    if (jvm_values.contains(m)) m = jvm_values[m];
+                for (auto& pair : jvm_values) {
+                    k = Strings::replace_all(k, pair.first, pair.second);
                 }
-                k = Strings::join(l, "=");
                 k = Strings::replace_all(k, "\\", "\\\\");
                 k = Strings::replace_all(k, "\"", "\\\"");
                 if (Strings::count(k, " ")) jvm_argument_list.push_back("\""+k+"\"");
@@ -348,7 +355,9 @@ std::string Instance::generateGameArguments(const std::vector<Rule::Feature>& fe
             if (i.allow(features)) {
                 for (auto& j : i.value()) {
                     std::string k = j;
-                    if (game_values.contains(k)) k = game_values[k];
+                    for (auto& pair : game_values) {
+                        k = Strings::replace_all(k, pair.first, pair.second);
+                    }
                     if (k == "--tweakClass") {
                         flag_after_tweakclass = true;
                         continue;
@@ -426,7 +435,7 @@ size_t InstanceContext::windowHeight() { return _window_height; }
 
 size_t InstanceContext::memory() { return _memory; }
 
-std::string Instance::generateLaunchCommand(std::string& output, InstanceContext& context, AccountsManager& account_manager, JavaManager& java_manager, const std::vector<Rule::Feature> features) {
+std::string Instance::generateLaunchCommand(InstanceContext& context, AccountsManager& account_manager, JavaManager& java_manager, const std::vector<Rule::Feature> features) {
     //writeLog("Generating launching command: %s, \"%s\". ", getId().c_str(), gameDir.c_str());
     std::filesystem::path instance_path = "versions"; instance_path /= _instance_name;
     std::filesystem::path native_path = _minecraft_path / "versions" / _instance_name / (std::string("natives-")+LAUNCHERQIU_OS_NAME+"-"+LAUNCHERQIU_OS_ARCH);
@@ -446,20 +455,25 @@ std::string Instance::generateLaunchCommand(std::string& output, InstanceContext
     game_values["${auth_session}"] =        account_manager.userToken();
     game_values["${auth_player_name}"] =    account_manager.userName();
     game_values["${auth_uuid}"] =           account_manager.userId();
+    game_values["${auth_xuid}"] =           account_manager.userId();
     game_values["${clientId}"] =            account_manager.userId();
     game_values["${client_id}"] =           account_manager.userId();
+    game_values["${clientid}"] =            account_manager.userId();
     game_values["${user_type}"] =           (account_manager.online()) ? ("msa") : ("legacy");
     game_values["${resolution_width}"] =    std::to_string(context.windowWidth());
     game_values["${resolution_height}"] =   std::to_string(context.windowHeight());
     game_values["${natives_directory}"] =   native_path;
     game_values["${user_properties}"] =     "{}";
-    game_values["${classpath_separator}"] = ":";
-    game_values["${library_directory}"] =   _minecraft_path / "libraries\\";
+    game_values["${classpath_separator}"] = LAUNCHERQIU_CLASSPATH_SEPARATOR;
+    game_values["${library_directory}"] =   _minecraft_path / "libraries";
     std::map<std::string, std::string> jvm_values;
     jvm_values["${classpath}"] =            generateClassPath(features);
     jvm_values["${natives_directory}"] =    native_path;
     jvm_values["${launcher_name}"] =        "LauncherQiu";
     jvm_values["${launcher_version}"] =     "0.0.1";
+    jvm_values["${version_name}"] =         _instance_name;
+    jvm_values["${classpath_separator}"] =  LAUNCHERQIU_CLASSPATH_SEPARATOR;
+    jvm_values["${library_directory}"] =    _minecraft_path / "libraries";
     //writeLog("Generating JVM arguments. ");
     std::string jvm_arguments = generateJVMArguments(features, jvm_values);
     //writeLog("Generating game arguments. ");
@@ -467,7 +481,6 @@ std::string Instance::generateLaunchCommand(std::string& output, InstanceContext
     if (game_arguments == "") {
         //call({ "msgbx","error","minecraft.no_args","error" });
         //writeLog("Failed to generate game arguments. ");
-        output = "";
         return "";
     }
     // 开始拼接参数！
@@ -483,8 +496,5 @@ std::string Instance::generateLaunchCommand(std::string& output, InstanceContext
     // 神秘硬编码参数……
     oss << " -Xmn" << std::to_string(context.memory()) << "m -XX:+UseG1GC -XX:-UseAdaptiveSizePolicy -XX:-OmitStackTraceInFastThrow -Dlog4j2.formatMsgNoLookups=true";
     oss << " " << jvm_arguments << " " << _main_class + " " + game_arguments;
-    output = oss.str();
-    return output;
+    return oss.str();
 }
-
-

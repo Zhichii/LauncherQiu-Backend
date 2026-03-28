@@ -49,12 +49,12 @@ int main() {
     }
     */
 
-    Instance inst("/mnt/80E8EEBFE8EEB298/Minecraft/.minecraft", "Release-OptiFine");
-    std::string output;
+    Instance inst("/mnt/80E8EEBFE8EEB298/Minecraft/.minecraft", "1.18.2-Forge-OptiFine");
     InstanceContext context(1618, 1000, 5120);
+    std::vector<Instance::Rule::Feature> features = {{"has_custom_resolution", true}};
     AccountsManager accounts_manager;
     JavaManager java_manager;
-    inst.generateLaunchCommand(output, context, accounts_manager, java_manager, {{"has_custom_resolution", true}});
+    std::string output = inst.generateLaunchCommand(context, accounts_manager, java_manager, features);
     std::filesystem::path test_sh = "/mnt/80E8EEBFE8EEB298/Minecraft/.minecraft/testlaunch.sh";
     std::ofstream ofs;
     ofs.open(test_sh);

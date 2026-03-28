@@ -6,6 +6,7 @@
     #else
         #define _LAUNCHERQIU_OS_ARCH "x86"
     #endif
+    #define _LAUNCHERQIU_CLASSPATH_SEPARATOR ";"
 #elif __APPLE__
     #include <TargetConditionals.h>
     #if TARGET_IPHONE_SIMULATOR
@@ -18,6 +19,7 @@
         #define _LAUNCHERQIU_OS_NAME "unknown"
     #endif
     #define _LAUNCHERQIU_OS_ARCH "unknown"
+    #define _LAUNCHERQIU_CLASSPATH_SEPARATOR ":"
 #elif __linux__
     #define _LAUNCHERQIU_OS_NAME "linux"
     #ifdef __i386__
@@ -27,13 +29,15 @@
     #else
         #define _LAUNCHERQIU_OS_ARCH "unknown"
     #endif
+    #define _LAUNCHERQIU_CLASSPATH_SEPARATOR ":"
 //#elif __unix__
 //#elif defined(_POSIX_VERSION)
 #else
     #define _LAUNCHERQIU_OS_NAME "unknown"
     #define _LAUNCHERQIU_OS_ARCH "unknown"
+    #define _LAUNCHERQIU_CLASSPATH_SEPARATOR ":"
 #endif
-
 
 #define LAUNCHERQIU_OS_NAME std::string(_LAUNCHERQIU_OS_NAME)
 #define LAUNCHERQIU_OS_ARCH std::string(_LAUNCHERQIU_OS_ARCH)
+#define LAUNCHERQIU_CLASSPATH_SEPARATOR std::string(_LAUNCHERQIU_CLASSPATH_SEPARATOR)

@@ -3,8 +3,7 @@
         {
             "name": "Linux",
             "includePath": [
-                "${workspaceFolder}/**",
-                "/mnt/80E8EEBFE8EEB298/Libraries/minizip-ng-4.1.0"
+                "${workspaceFolder}/**"
             ],
             "defines": [],
             "cStandard": "c17",
