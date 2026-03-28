@@ -1,28 +1,39 @@
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-    #define OS_NAME "windows"
+    #define _LAUNCHERQIU_OS_NAME "windows"
     #ifdef _WIN64
-        // pass
+        #define _LAUNCHERQIU_OS_ARCH "x86_64"
     #else
-        // pass
+        #define _LAUNCHERQIU_OS_ARCH "x86"
     #endif
 #elif __APPLE__
     #include <TargetConditionals.h>
     #if TARGET_IPHONE_SIMULATOR
-        #error "Not supported. Please contact `Qiuyixuan_last@outlook.com` if required."
+        #define _LAUNCHERQIU_OS_NAME "unknown"
     #elif TARGET_OS_IPHONE
-        #error "Not supported. Please contact `Qiuyixuan_last@outlook.com` if required."
+        #define _LAUNCHERQIU_OS_NAME "unknown"
     #elif TARGET_OS_MAC
-        #define OS_NAME "osx"
+        #define _LAUNCHERQIU_OS_NAME "osx"
     #else
-        #error "Not supported. Please contact `Qiuyixuan_last@outlook.com` if required."
+        #define _LAUNCHERQIU_OS_NAME "unknown"
     #endif
+    #define _LAUNCHERQIU_OS_ARCH "unknown"
 #elif __linux__
-    #define OS_NAME "linux"
-#elif __unix__
-    #error "Not supported. Please contact `Qiuyixuan_last@outlook.com` if required."
-#elif defined(_POSIX_VERSION)
-    #error "Not supported. Please contact `Qiuyixuan_last@outlook.com` if required."
+    #define _LAUNCHERQIU_OS_NAME "linux"
+    #ifdef __i386__
+        #define _LAUNCHERQIU_OS_ARCH "x86"
+    #elif __x86_64__
+        #define _LAUNCHERQIU_OS_ARCH "x86_64"
+    #else
+        #define _LAUNCHERQIU_OS_ARCH "unknown"
+    #endif
+//#elif __unix__
+//#elif defined(_POSIX_VERSION)
 #else
-    #error "Not supported. Please contact `Qiuyixuan_last@outlook.com` if required."
+    #define _LAUNCHERQIU_OS_NAME "unknown"
+    #define _LAUNCHERQIU_OS_ARCH "unknown"
 #endif
+
+
+#define LAUNCHERQIU_OS_NAME std::string(_LAUNCHERQIU_OS_NAME)
+#define LAUNCHERQIU_OS_ARCH std::string(_LAUNCHERQIU_OS_ARCH)

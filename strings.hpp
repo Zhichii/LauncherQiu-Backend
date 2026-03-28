@@ -21,7 +21,7 @@ namespace Strings {
 	// 计数 by DeepSeek
 	inline size_t count(std::string_view str, std::string_view substr) {
         size_t cnt = 0;
-        for (size_t pos = 0; 
+        for (size_t pos = str.find(substr); 
              pos != std::string_view::npos; 
              pos = str.find(substr, pos + 1)) {
             cnt++;

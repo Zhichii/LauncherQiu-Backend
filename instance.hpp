@@ -1,6 +1,19 @@
 #pragma once
 #include <filesystem>
 #include <jsoncpp/json/json.h>
+#include "accounts.hpp"
+#include "java.hpp"
+
+class InstanceContext {
+	size_t _window_width;
+	size_t _window_height;
+	size_t _memory;
+public:
+	InstanceContext(size_t window_width, size_t window_height, size_t memory);
+	size_t windowWidth();
+	size_t windowHeight();
+	size_t memory(); // Megabytes
+};
 
 class Instance {
 public:
@@ -21,6 +34,7 @@ public:
 		bool _action; // allow=1, disallow=0
 		std::string _os_name;
 		std::string _os_version;
+		std::string _os_arch;
 		std::map<std::string,bool> _features;
 	public:
 		class Feature {
@@ -43,9 +57,9 @@ public:
 		std::vector<Rule> _rules;
 	public:
 		LibraryItem(Json::Value json);
-		bool extractNatives(std::filesystem::path game_dir, std::string instance_name);
+		bool extractNatives(Instance& instance);
 		std::string name(); // 和_name不一样的是，这个会去除版本，只保留真正的名字。
-		std::filesystem::path finalLibPath(std::filesystem::path game_dir);
+		std::filesystem::path finalLibPath(std::filesystem::path minecraft_path);
 		bool allow(std::vector<Rule::Feature> features);
 	};
 	class ArgumentItem {
@@ -56,7 +70,8 @@ public:
 		bool allow(std::vector<Rule::Feature> features);
 		std::vector<std::string> value();
 	};
-public: // test purpose
+	std::filesystem::path _minecraft_path;
+	std::string _instance_name;
 	std::string _id;
 	std::string _main_class;
 	File _asset_index;
@@ -78,7 +93,16 @@ public: // test purpose
 	std::vector<ArgumentItem> _jvm_arguments;
 	std::vector<std::unique_ptr<Instance>> _patches;
 	void init(Json::Value info);
+public: // test purpose only
+	std::string generateClassPath(const std::vector<Rule::Feature>& features);
+	std::string generateJVMArguments(const std::vector<Rule::Feature>& features, std::map<std::string,std::string>& jvm_values);
+	std::string generateGameArguments(const std::vector<Rule::Feature>& features, std::map<std::string, std::string>& game_values);
 public:
-    Instance(std::filesystem::path minecraft_path, std::string version);
+    Instance(std::filesystem::path minecraft_path, std::string instance_name);
     Instance(Json::Value& json);
+	const std::filesystem::path& minecraftPath();
+	const std::string& instanceName();
+	const std::string& id();
+	const std::string& type();
+	std::string generateLaunchCommand(std::string& output, InstanceContext& context, AccountsManager& account_manager, JavaManager& java_manager, const std::vector<Rule::Feature> features);
 };
