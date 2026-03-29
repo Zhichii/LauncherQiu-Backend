@@ -152,7 +152,7 @@ bool Instance::LibraryItem::extractNatives(Instance& instance) {
             char* buf = new char[info.uncompressed_size];
             int len = unzReadCurrentFile(zipfile, buf, info.uncompressed_size);
             std::ofstream ofs;
-            ofs.open(extract_path / (std::filesystem::path(name).filename()));
+            ofs.open(extract_path / (std::filesystem::path(name).filename()), std::ios::binary);
             ofs.write(buf, len);
             delete[] buf;
             ofs.close();
@@ -263,15 +263,18 @@ void Instance::init(Json::Value info) {
     }
     _game_type = info["type"].asString();
     if (info.isMember("arguments")) {
-        for (size_t i = 0; i < info["arguments"]["game"].size(); i ++) {
-            _game_arguments.push_back(info["arguments"]["game"][(int)i]);
+        for (auto argument : info["arguments"]["game"]) {
+            _game_arguments.push_back(argument);
         }
-        for (size_t i = 0; i < info["arguments"]["jvm"].size(); i++) {
-            _jvm_arguments.push_back(info["arguments"]["jvm"][(int)i]);
+        for (auto argument : info["arguments"]["jvm"]) {
+            _game_arguments.push_back(argument);
         }
     }
     if (info.isMember("minecraftArguments")) {
-        _legacy_game_arguments = info["minecraftArguments"].asString();
+        std::vector<std::string> game_argument_list = Strings::split(info["minecraftArguments"].asString(), " ");
+        for (auto argument : game_argument_list) {
+            _game_arguments.push_back(Json::Value(argument));
+        }
         _jvm_arguments = { Json::Value("-cp"), Json::Value("${classpath}") };
     }
     if (info.isMember("patches") &&
@@ -324,7 +327,7 @@ std::string Instance::generateClassPath(const std::vector<Rule::Feature>& featur
     return Strings::join(library_list, LAUNCHERQIU_CLASSPATH_SEPARATOR);
 }
 
-std::string Instance::generateJVMArguments(const std::vector<Rule::Feature>& features, std::map<std::string,std::string>& jvm_values) {
+std::vector<std::string> Instance::generateJVMArguments(const std::vector<Rule::Feature>& features, std::map<std::string,std::string>& jvm_values) {
     std::vector<std::string> jvm_argument_list;
     for (auto& i : _jvm_arguments) {
         if (i.allow(features)) {
@@ -340,87 +343,34 @@ std::string Instance::generateJVMArguments(const std::vector<Rule::Feature>& fea
             }
         }
     }
-    return Strings::join(jvm_argument_list, " ");
+    return jvm_argument_list;
 }
 
-std::string Instance::generateGameArguments(const std::vector<Rule::Feature>& features, std::map<std::string, std::string>& game_values) {
-    std::string game_arguments;
-    bool flag_optifine_forge = false;
-    bool flag_forge = false;
-    bool flag_optifine = false;
-    bool flag_after_tweakclass = false;
-    if (_game_arguments.size() > 0) {
-        std::vector<std::string> game_argument_list;
-        for (auto& i : _game_arguments) {
-            if (i.allow(features)) {
-                for (auto& j : i.value()) {
-                    std::string k = j;
-                    for (auto& pair : game_values) {
-                        k = Strings::replace_all(k, pair.first, pair.second);
-                    }
-                    if (k == "--tweakClass") {
-                        flag_after_tweakclass = true;
-                        continue;
-                    }
-                    if (flag_after_tweakclass && k == "net.minecraftforge.fml.common.launcher.FMLTweaker") {
-                        //game_argument_list.push_back("--tweakClass");
-                        // ……何意味，为啥我加了这个啊？
-                        flag_forge = true;
-                        flag_after_tweakclass = false;
-                    }
-                    if (flag_after_tweakclass && k == "optifine.OptiFineForgeTweaker") {
-                        flag_optifine_forge = true;
-                        flag_after_tweakclass = false;
-                        continue;
-                    }
-                    if (flag_after_tweakclass && k == "optifine.OptiFineForgeTweaker") {
-                        flag_optifine = true;
-                        flag_after_tweakclass = false;
-                        continue;
-                    }
-                    k = Strings::replace_all(k, "\\", "\\\\");
-                    k = Strings::replace_all(k, "\"", "\\\"");
-                    if (Strings::count(k, " ")) game_argument_list.push_back("\""+k+"\"");
-                    else game_argument_list.push_back(k);
+std::vector<std::string> Instance::generateGameArguments(const std::vector<Rule::Feature>& features, std::map<std::string, std::string>& game_values) {
+    std::vector<std::string> game_argument_list;
+    for (auto& i : _game_arguments) {
+        if (i.allow(features)) {
+            for (auto& j : i.value()) {
+                std::string k = j;
+                for (auto& pair : game_values) {
+                    k = Strings::replace_all(k, pair.first, pair.second);
                 }
-            }
-        }
-        // 如果不这样额外处理OptiFine和Forge，貌似会崩溃
-        if ((flag_optifine && flag_forge) || flag_optifine_forge) {
-            game_argument_list.push_back("--tweakClass");
-            game_argument_list.push_back("optifine.OptiFineForgeTweaker");
-        }
-        game_arguments = Strings::join(game_argument_list, " ");
-    }
-    else if (_legacy_game_arguments != "") {
-        game_arguments = _legacy_game_arguments;
-        // 处理一下窗口大小
-        if (Strings::count(game_arguments, " --width") == 0) {
-            game_arguments += " --width {resolution_width} --height {resolution_height}";
-        }
-        for (const auto& i : game_values) {
-            std::string k = i.second;
-            k = Strings::replace_all(k, "\\", "\\\\");
-            k = Strings::replace_all(k, "\"", "\\\"");
-            if (Strings::count(k, " ")) k = "\""+k+"\"";
-            game_arguments = Strings::replace_all(game_arguments, i.first, k);
-        }
-        // 一样，特殊处理OptiFine和Forge，将--tweakClass放到后面去。
-        if (Strings::count(game_arguments, " --tweakClass optifine.OptiFineForgeTweaker")) {
-            game_arguments = Strings::replace_all(game_arguments, " --tweakClass optifine.OptiFineForgeTweaker", "");
-            game_arguments += " --tweakClass optifine.OptiFineForgeTweaker";
-        }
-        else if (Strings::count(game_arguments, " --tweakClass net.minecraftforge.fml.common.launcher.FMLTweaker") != 0) {
-            if (Strings::count(game_arguments, " --tweakClass optifine.OptiFineTweaker") != 0) {
-                game_arguments = Strings::replace_all(game_arguments, " --tweakClass optifine.OptiFineTweaker", "");
-                game_arguments += " --tweakClass optifine.OptiFineForgeTweaker";
+                k = Strings::replace_all(k, "\\", "\\\\");
+                k = Strings::replace_all(k, "\"", "\\\"");
+                k = Strings::replace_all(k, "$", "\\$");
+                k = Strings::replace_all(k, ";", "\\;");
+                k = Strings::replace_all(k, " ", "\\ ");
+                k = Strings::replace_all(k, "`", "\\`");
+                k = Strings::replace_all(k, "!", "\\!");
+                game_argument_list.push_back(k);
             }
         }
     }
-    else {
-        return "";
-    }
-    return game_arguments;
+    // 处理一下窗口大小
+    //if (!game_argument_list.contains()) {
+    //    game_arguments += " --width ${resolution_width} --height ${resolution_height}";
+    //}
+    return game_argument_list;
 }
 
 InstanceContext::InstanceContext(size_t window_width, size_t window_height, size_t memory) {
@@ -435,15 +385,13 @@ size_t InstanceContext::windowHeight() { return _window_height; }
 
 size_t InstanceContext::memory() { return _memory; }
 
-std::string Instance::generateLaunchCommand(InstanceContext& context, AccountsManager& account_manager, JavaManager& java_manager, const std::vector<Rule::Feature> features) {
-    //writeLog("Generating launching command: %s, \"%s\". ", getId().c_str(), gameDir.c_str());
+std::vector<std::string> Instance::generateLaunchCommand(InstanceContext& context, AccountsManager& account_manager, JavaManager& java_manager, const std::vector<Rule::Feature> features) {
+    printf("Generating launching command: %s, \"%s\". ", _instance_name.c_str(), _minecraft_path.c_str());
     std::filesystem::path instance_path = "versions"; instance_path /= _instance_name;
     std::filesystem::path native_path = _minecraft_path / "versions" / _instance_name / (std::string("natives-")+LAUNCHERQIU_OS_NAME+"-"+LAUNCHERQIU_OS_ARCH);
     // 创建natives目录
     std::filesystem::create_directories(native_path);
     std::string java = java_manager.find_java(_java_version);
-    //writeLog("Found Java \"%s\". ", finalJava.c_str());
-    //writeLog("Reloging-in the account. ");
     account_manager.relogin();
     std::map<std::string, std::string> game_values;
     game_values["${version_name}"] =        _id;
@@ -474,23 +422,17 @@ std::string Instance::generateLaunchCommand(InstanceContext& context, AccountsMa
     jvm_values["${version_name}"] =         _instance_name;
     jvm_values["${classpath_separator}"] =  LAUNCHERQIU_CLASSPATH_SEPARATOR;
     jvm_values["${library_directory}"] =    _minecraft_path / "libraries";
-    //writeLog("Generating JVM arguments. ");
-    std::string jvm_arguments = generateJVMArguments(features, jvm_values);
-    //writeLog("Generating game arguments. ");
-    std::string game_arguments = generateGameArguments(features, game_values);
-    if (game_arguments == "") {
-        //call({ "msgbx","error","minecraft.no_args","error" });
-        //writeLog("Failed to generate game arguments. ");
-        return "";
-    }
-    // 开始拼接参数！
-    std::ostringstream oss;
-    oss << "\"" << java << "\"";
-    if (Strings::count(jvm_arguments, "-Djava.library.path") == 0) {
-        oss << " \"-Djava.library.path=" << native_path.string() << "\"";
-    }
+    printf("Generating JVM arguments.");
+    std::vector<std::string> jvm_arguments = generateJVMArguments(features, jvm_values);
+    printf("Generating game arguments.");
+    std::vector<std::string> game_arguments = generateGameArguments(features, game_values);
+    printf("Start concatenating all the arguments.");
+    std::vector<std::string> oss;
+    //if (Strings::count(jvm_arguments, "-Djava.library.path") == 0) {
+    //    oss << " \"-Djava.library.path=" << native_path.string() << "\"";
+    //}
     if (_logging_argument != "") {
-        oss << " " << Strings::replace_all(_logging_argument,
+        oss.push_back(Strings::replace_all(_logging_argument,
             "${path}", "\"" + (_minecraft_path / "versions" / _instance_name / _logging_id).string() + "\"");
     }
     // 神秘硬编码参数……

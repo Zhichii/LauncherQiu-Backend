@@ -49,7 +49,7 @@ int main() {
     }
     */
 
-    Instance inst("/mnt/80E8EEBFE8EEB298/Minecraft/.minecraft", "1.18.2-Forge-OptiFine");
+    Instance inst("/mnt/80E8EEBFE8EEB298/Minecraft/.minecraft", "1.12.2-Forge-OptiFine");
     InstanceContext context(1618, 1000, 5120);
     std::vector<Instance::Rule::Feature> features = {{"has_custom_resolution", true}};
     AccountsManager accounts_manager;
@@ -60,5 +60,6 @@ int main() {
     ofs.open(test_sh);
     ofs.write(output.data(), output.size());
     ofs.close();
+    std::cout << "?" << std::endl;
 
 };

@@ -90,13 +90,12 @@ private:
 	std::string _game_type;
 	std::vector<LibraryItem> _libraries;
 	std::vector<ArgumentItem> _game_arguments;
-	std::string _legacy_game_arguments;
 	std::vector<ArgumentItem> _jvm_arguments;
 	std::vector<std::unique_ptr<Instance>> _patches;
 	void init(Json::Value info);
 	std::string generateClassPath(const std::vector<Rule::Feature>& features);
-	std::string generateJVMArguments(const std::vector<Rule::Feature>& features, std::map<std::string,std::string>& jvm_values);
-	std::string generateGameArguments(const std::vector<Rule::Feature>& features, std::map<std::string, std::string>& game_values);
+	std::vector<std::string> generateJVMArguments(const std::vector<Rule::Feature>& features, std::map<std::string,std::string>& jvm_values);
+	std::vector<std::string> generateGameArguments(const std::vector<Rule::Feature>& features, std::map<std::string, std::string>& game_values);
 public:
     Instance(std::filesystem::path minecraft_path, std::string instance_name);
     Instance(Json::Value& json);
@@ -104,5 +103,6 @@ public:
 	const std::string& instanceName();
 	const std::string& id();
 	const std::string& type();
-	std::string generateLaunchCommand(InstanceContext& context, AccountsManager& account_manager, JavaManager& java_manager, const std::vector<Rule::Feature> features);
+	std::vector<std::string> generateLaunchCommand(InstanceContext& context, AccountsManager& account_manager, JavaManager& java_manager, const std::vector<Rule::Feature> features);
+	std::string detectFabricVersion();
 };
