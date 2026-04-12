@@ -15,6 +15,13 @@ public:
 	size_t memory(); // Megabytes
 };
 
+class Version {
+	static Version Release_2011();
+	static Version Release_2011();
+	static Version Release_2026();
+	static Version Snapshot_2026();
+};
+
 class Instance {
 public:
     class File {
@@ -91,11 +98,13 @@ private:
 	std::vector<LibraryItem> _libraries;
 	std::vector<ArgumentItem> _game_arguments;
 	std::vector<ArgumentItem> _jvm_arguments;
+	std::string _patch_version; // _patches会有这项
+	std::string _patch_priority; // _patches会有这项
 	std::vector<std::unique_ptr<Instance>> _patches;
 	void init(Json::Value info);
 	std::string generateClassPath(const std::vector<Rule::Feature>& features);
-	std::vector<std::string> generateJVMArguments(const std::vector<Rule::Feature>& features, std::map<std::string,std::string>& jvm_values);
-	std::vector<std::string> generateGameArguments(const std::vector<Rule::Feature>& features, std::map<std::string, std::string>& game_values);
+	void generateJVMArguments(std::vector<std::string>& output, const std::vector<Rule::Feature>& features, std::map<std::string,std::string>& jvm_values);
+	void generateGameArguments(std::vector<std::string>& output, const std::vector<Rule::Feature>& features, std::map<std::string, std::string>& game_values);
 public:
     Instance(std::filesystem::path minecraft_path, std::string instance_name);
     Instance(Json::Value& json);
@@ -103,6 +112,15 @@ public:
 	const std::string& instanceName();
 	const std::string& id();
 	const std::string& type();
-	std::vector<std::string> generateLaunchCommand(InstanceContext& context, AccountsManager& account_manager, JavaManager& java_manager, const std::vector<Rule::Feature> features);
-	std::string detectFabricVersion();
+	int javaVersion();
+	void generateLaunchArguments(std::vector<std::string>& output, InstanceContext& context, AccountsManager& account_manager, const std::vector<Rule::Feature> features);
+	class PatchData {
+		enum Type {
+			VANILLA, FABRIC, FORGE, NEOFORGE, FEATHERLOADER /* FeatherLoader我自己写的 */, 
+		};
+		Type type;
+		std::string version;
+	};
+	bool modded(); // 注意，这只检测mainClass是否不是纯血Minecraft。
+	std::vector<PatchData> detectPatches();
 };

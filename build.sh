@@ -1,0 +1,2 @@
+g++ -std=c++20 test.cpp instance.cpp minecraft.cpp accounts.cpp java.cpp ./libs/json_reader.o ./libs/json_value.o ./libs/json_writer.o -lminizip -lssl -lcrypto -lz -g -o build/LauncherQiu-Test\
+&& ./build/LauncherQiu-Test

@@ -3,6 +3,7 @@
 #include <fstream>
 #include <jsoncpp/json/json.h>
 #include <minizip/unzip.h>
+#include <algorithm>
 #include "config.hpp"
 #include "strings.hpp"
 
@@ -235,39 +236,47 @@ bool Instance::ArgumentItem::allow(std::vector<Rule::Feature> features) {
 std::vector<std::string> Instance::ArgumentItem::value() { return _value; }
 
 void Instance::init(Json::Value info) {
-    _id = info["id"].asString();
-    _main_class = info["mainClass"].asString();
-    _asset_index = File(info["assetIndex"]);
-    _asset_index_total_size= info["assetIndex"]["totalSize"].asInt64();
-    _asset_index_id = info["assetIndex"]["id"].asString();
-    _compliance_level= info["complianceLevel"].asInt();
-    _java_version = info["javaVersion"]["majorVersion"].asInt();
-    Json::Value downloads = info["downloads"];
-    if (downloads.isMember("client_mappings")) {
-        _client_mappings = File(downloads["client_mappings"]);
-        _server_mappings = File(downloads["server_mappings"]);
+    // 我认为，无论发生什么错误，我们先用空值代替。
+    // 因为有个东西叫_patches
+    if (!info.isObject()) return; // 但这个实在没办法。
+    if (info.isMember("id")) _id = info["id"].asString();
+    if (info.isMember("mainClass")) _main_class = info["mainClass"].asString();
+    if (info.isMember("assetIndex") && info["assetIndex"].isObject()) {
+        _asset_index = File(info["assetIndex"]);
+        if (info["assetIndex"].isMember("totalSize") && info["assetIndex"]["totalSize"].isInt()) _asset_index_total_size= info["assetIndex"]["totalSize"].asInt64();
+        if (info["assetIndex"].isMember("id"))_asset_index_id = info["assetIndex"]["id"].asString();
     }
-    _client = File(downloads["client"]);
-    _server = File(downloads["server"]);
-    if (info.isMember("logging")) {
-        if (info["logging"].isMember("client")) {
-            _logging_file = File(info["logging"]["client"]["file"]);
-            _logging_id = info["logging"]["client"]["file"]["id"].asString();
-            _logging_argument = info["logging"]["client"]["argument"].asString();
+    if (info.isMember("complianceLevel") && info["complianceLevel"].isInt()) _compliance_level = info["complianceLevel"].asInt();
+    if (info.isMember("javaVersion") && info["javaVersion"].isObject()) {
+        if (info["javaVersion"].isMember("majorVersion") && info["javaVersion"]["majorVersion"].isInt()) _java_version = info["javaVersion"]["majorVersion"].asInt();
+    }
+    if (info.isMember("downloads") && info["downloads"].isObject()) {
+        Json::Value& downloads = info["downloads"];
+        if (downloads.isMember("client_mappings") && downloads["client_mappings"].isObject()) _client_mappings = File(downloads["client_mappings"]);
+        if (downloads.isMember("server_mappings") && downloads["client_mappings"].isObject()) _server_mappings = File(downloads["server_mappings"]);
+        if (downloads.isMember("client")) _client = File(downloads["client"]);
+        if (downloads.isMember("server")) _server = File(downloads["server"]);
+    }
+    if (info.isMember("logging") && info["loogging"].isObject()) {
+        if (info["logging"].isMember("client") && info["loogging"]["client"].isObject()) {
+            if (info["logging"]["client"].isMember("file") && info["logging"]["client"]["file"].isObject()) {
+                _logging_file = File(info["logging"]["client"]["file"]);
+                if (info["logging"]["client"]["file"].isMember("id")) _logging_id = info["logging"]["client"]["file"]["id"].asString();
+                if (info["logging"]["client"]["file"].isMember("argument")) _logging_argument = info["logging"]["client"]["argument"].asString();
+            }
         }
     }
-    else {
-        _logging_file = {};
-        _logging_id = {};
-        _logging_argument = {};
-    }
-    _game_type = info["type"].asString();
+    if (info.isMember("type")) _game_type = info["type"].asString();
     if (info.isMember("arguments")) {
-        for (auto argument : info["arguments"]["game"]) {
-            _game_arguments.push_back(argument);
+        if (info["arguments"].isMember("jvm") && info["arguments"]["jvm"].isArray()) {
+            for (auto argument : info["arguments"]["jvm"]) {
+                _jvm_arguments.push_back(argument);
+            }
         }
-        for (auto argument : info["arguments"]["jvm"]) {
-            _game_arguments.push_back(argument);
+        if (info["arguments"].isMember("game") && info["arguments"]["game"].isArray()) {
+            for (auto argument : info["arguments"]["game"]) {
+                _game_arguments.push_back(argument);
+            }
         }
     }
     if (info.isMember("minecraftArguments")) {
@@ -277,25 +286,32 @@ void Instance::init(Json::Value info) {
         }
         _jvm_arguments = { Json::Value("-cp"), Json::Value("${classpath}") };
     }
-    if (info.isMember("patches") &&
-        (info["patches"].size() > 0)) {
+    if (info.isMember("libraries") && info["libraries"].isArray()) {
+        for (Json::Value i : info["libraries"]) {
+            _libraries.push_back(i);
+        }
+    }
+    // Patches可能是HMCL拓展
+    if (info.isMember("patches") && info["patches"].isArray()) {
         for (Json::Value& patch : info["patches"]) {
             _patches.push_back(std::make_unique<Instance>(patch));
         }
     }
-    for (Json::Value i : info["libraries"]) {
-        _libraries.push_back(i);
-    }
+    if (info.isMember("version")) _patch_version = info["version"].asString();
+    if (info.isMember("priority")) _patch_priority = info["priority"].asInt();
 }
 
 Instance::Instance(std::filesystem::path minecraft_path, std::string instance_name) {
     _minecraft_path = minecraft_path;
     _instance_name = instance_name;
     std::ifstream ifs(minecraft_path / "versions" / instance_name / (instance_name+".json"));
+    if (!ifs) throw std::runtime_error(strerror(errno));
     Json::CharReaderBuilder builder;
     Json::String errs;
     Json::Value root;
-    Json::parseFromStream(builder, ifs, &root, &errs);
+    bool result = Json::parseFromStream(builder, ifs, &root, &errs);
+    ifs.close();
+    if (!result) throw std::runtime_error(errs);
     init(root);
 }
 
@@ -310,6 +326,8 @@ const std::string& Instance::instanceName() { return _instance_name; }
 const std::string& Instance::id() { return _id; }
 
 const std::string& Instance::type() { return _game_type; }
+
+int Instance::javaVersion() { return _java_version; }
 
 std::string Instance::generateClassPath(const std::vector<Rule::Feature>& features) {
     std::map<std::string,std::string> available; // For solving libraries duplicating. 
@@ -327,8 +345,7 @@ std::string Instance::generateClassPath(const std::vector<Rule::Feature>& featur
     return Strings::join(library_list, LAUNCHERQIU_CLASSPATH_SEPARATOR);
 }
 
-std::vector<std::string> Instance::generateJVMArguments(const std::vector<Rule::Feature>& features, std::map<std::string,std::string>& jvm_values) {
-    std::vector<std::string> jvm_argument_list;
+void Instance::generateJVMArguments(std::vector<std::string>& output, const std::vector<Rule::Feature>& features, std::map<std::string,std::string>& jvm_values) {
     for (auto& i : _jvm_arguments) {
         if (i.allow(features)) {
             for (auto& j : i.value()) {
@@ -336,18 +353,13 @@ std::vector<std::string> Instance::generateJVMArguments(const std::vector<Rule::
                 for (auto& pair : jvm_values) {
                     k = Strings::replace_all(k, pair.first, pair.second);
                 }
-                k = Strings::replace_all(k, "\\", "\\\\");
-                k = Strings::replace_all(k, "\"", "\\\"");
-                if (Strings::count(k, " ")) jvm_argument_list.push_back("\""+k+"\"");
-                else jvm_argument_list.push_back(k);
+                output.push_back(k);
             }
         }
     }
-    return jvm_argument_list;
 }
 
-std::vector<std::string> Instance::generateGameArguments(const std::vector<Rule::Feature>& features, std::map<std::string, std::string>& game_values) {
-    std::vector<std::string> game_argument_list;
+void Instance::generateGameArguments(std::vector<std::string>& output, const std::vector<Rule::Feature>& features, std::map<std::string, std::string>& game_values) {
     for (auto& i : _game_arguments) {
         if (i.allow(features)) {
             for (auto& j : i.value()) {
@@ -355,14 +367,7 @@ std::vector<std::string> Instance::generateGameArguments(const std::vector<Rule:
                 for (auto& pair : game_values) {
                     k = Strings::replace_all(k, pair.first, pair.second);
                 }
-                k = Strings::replace_all(k, "\\", "\\\\");
-                k = Strings::replace_all(k, "\"", "\\\"");
-                k = Strings::replace_all(k, "$", "\\$");
-                k = Strings::replace_all(k, ";", "\\;");
-                k = Strings::replace_all(k, " ", "\\ ");
-                k = Strings::replace_all(k, "`", "\\`");
-                k = Strings::replace_all(k, "!", "\\!");
-                game_argument_list.push_back(k);
+                output.push_back(k);
             }
         }
     }
@@ -370,7 +375,6 @@ std::vector<std::string> Instance::generateGameArguments(const std::vector<Rule:
     //if (!game_argument_list.contains()) {
     //    game_arguments += " --width ${resolution_width} --height ${resolution_height}";
     //}
-    return game_argument_list;
 }
 
 InstanceContext::InstanceContext(size_t window_width, size_t window_height, size_t memory) {
@@ -385,13 +389,12 @@ size_t InstanceContext::windowHeight() { return _window_height; }
 
 size_t InstanceContext::memory() { return _memory; }
 
-std::vector<std::string> Instance::generateLaunchCommand(InstanceContext& context, AccountsManager& account_manager, JavaManager& java_manager, const std::vector<Rule::Feature> features) {
-    printf("Generating launching command: %s, \"%s\". ", _instance_name.c_str(), _minecraft_path.c_str());
+void Instance::generateLaunchArguments(std::vector<std::string>& output, InstanceContext& context, AccountsManager& account_manager, const std::vector<Rule::Feature> features) {
+    printf("Started geenerating launch arguments: %s, \"%s\".\n", _instance_name.c_str(), _minecraft_path.c_str());
     std::filesystem::path instance_path = "versions"; instance_path /= _instance_name;
     std::filesystem::path native_path = _minecraft_path / "versions" / _instance_name / (std::string("natives-")+LAUNCHERQIU_OS_NAME+"-"+LAUNCHERQIU_OS_ARCH);
     // 创建natives目录
     std::filesystem::create_directories(native_path);
-    std::string java = java_manager.find_java(_java_version);
     account_manager.relogin();
     std::map<std::string, std::string> game_values;
     game_values["${version_name}"] =        _id;
@@ -422,21 +425,38 @@ std::vector<std::string> Instance::generateLaunchCommand(InstanceContext& contex
     jvm_values["${version_name}"] =         _instance_name;
     jvm_values["${classpath_separator}"] =  LAUNCHERQIU_CLASSPATH_SEPARATOR;
     jvm_values["${library_directory}"] =    _minecraft_path / "libraries";
-    printf("Generating JVM arguments.");
-    std::vector<std::string> jvm_arguments = generateJVMArguments(features, jvm_values);
-    printf("Generating game arguments.");
-    std::vector<std::string> game_arguments = generateGameArguments(features, game_values);
-    printf("Start concatenating all the arguments.");
-    std::vector<std::string> oss;
-    //if (Strings::count(jvm_arguments, "-Djava.library.path") == 0) {
-    //    oss << " \"-Djava.library.path=" << native_path.string() << "\"";
-    //}
     if (_logging_argument != "") {
-        oss.push_back(Strings::replace_all(_logging_argument,
-            "${path}", "\"" + (_minecraft_path / "versions" / _instance_name / _logging_id).string() + "\"");
+        output.push_back(Strings::replace_all(_logging_argument,
+            "${path}", (_minecraft_path / "versions" / _instance_name / _logging_id).string()));
     }
     // 神秘硬编码参数……
-    oss << " -Xmn" << std::to_string(context.memory()) << "m -XX:+UseG1GC -XX:-UseAdaptiveSizePolicy -XX:-OmitStackTraceInFastThrow -Dlog4j2.formatMsgNoLookups=true";
-    oss << " " << jvm_arguments << " " << _main_class + " " + game_arguments;
-    return oss.str();
+    output.push_back("-Xmx"+std::to_string(context.memory())+"m");
+    output.push_back("-XX:+UseG1GC");
+    output.push_back("-XX:-UseAdaptiveSizePolicy");
+    output.push_back("-XX:-OmitStackTraceInFastThrow");
+    output.push_back("-Dlog4j2.formatMsgNoLookups=true");
+    printf("Start generating JVM arguments.\n");
+    generateJVMArguments(output, features, jvm_values);
+    output.push_back(_main_class);
+    printf("Start generating game arguments.\n");
+    generateGameArguments(output, features, game_values);
+    if (std::find(output.begin(), output.end(), "-Djava.library.path") != output.end()) {
+        output.push_back("-Djava.library.path="+native_path.string());
+    }
+    printf("Launch command was successfully generated.\n");
+}
+
+bool Instance::modded() {
+    if (_main_class == "net.minecraft.client.main.Main") return false;
+    // 嗯，即使安装了Fabric，如果mainClass没有修改，那不还是白费吗！
+    return true;
+}
+
+std::vector<Instance::PatchData> Instance::detectPatches() {
+    if (_patches.size()) {
+        // 这个是HMCL的
+        for (auto& i : _patches) {
+            
+        }
+    }
 }

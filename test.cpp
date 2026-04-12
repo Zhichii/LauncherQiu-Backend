@@ -4,24 +4,23 @@
 #include <iostream>
 #include <jsoncpp/json/json.h>
 
-#include "instance.hpp"
-
-class Minecraft {
-    std::filesystem::path _path;
-public:
-    Minecraft(std::filesystem::path directory) {
-    }
-};
+#include "minecraft.hpp"
+#include "strings.hpp"
 
 int main() {
-    /* 画饼，驱动自己前进：
     try {
-        Minecraft minecraft { "/mnt/80E8EEBFE8EEB298/Minecraft" };
+        Minecraft minecraft { "/mnt/80E8EEBFE8EEB298/Minecraft/.minecraft" };
         // 读取目录versions，每个folder，读取json，每个json，解析。
-        std::vector<Instance>& instances = minecraft.instanceList();
-        for (instance : instances) {
+        for (auto& instance : minecraft.instanceList()) {
+            if (std::shared_ptr ptr = instance.lock()) {
+                std::cout << ptr->instanceName() << ", ";
+                std::cout.flush();
+            }
+        }
+        /* 画饼，驱动自己前进：
+        for (instance : minecraft.instanceList()) {
             printf("%s (%s) - ", instance.name().c_str(), instance.version().c_str());
-            ModLoaderConfig& ders = instance.modLoaders();
+            ModLoaderConfig& mod_loader = instance.modLoaders();
             bool modded = false; // 不仅能用来判断是不是原版，还能判断是不是第一个，便于添加逗号。
             if (mod_loader.fabric().state()) {
                 printf("Fabric %s", mod_loader.fabric().version());
@@ -43,23 +42,49 @@ int main() {
                 modded = true;
             }
         }
+        */
     }
-    except (std::exception e) {
-        std::cout << e << std::endl;
+    catch (std::exception e) {
+        std::cout << e.what() << std::endl;
     }
-    */
-
-    Instance inst("/mnt/80E8EEBFE8EEB298/Minecraft/.minecraft", "1.12.2-Forge-OptiFine");
+    std::cout << std::endl;
+return 0;
+    Instance inst("/mnt/80E8EEBFE8EEB298/Minecraft/.minecraft", "Release");
     InstanceContext context(1618, 1000, 5120);
     std::vector<Instance::Rule::Feature> features = {{"has_custom_resolution", true}};
     AccountsManager accounts_manager;
     JavaManager java_manager;
-    std::string output = inst.generateLaunchCommand(context, accounts_manager, java_manager, features);
+    std::vector<std::string> output;
+    inst.generateLaunchArguments(output, context, accounts_manager, features);
+return 0;
+    char** args = new char*[output.size()+1];
+    for (size_t i = 0; i < output.size(); i++) args[i] = const_cast<char*>(output[i].c_str());
+    args[output.size()] = nullptr;
+    std::filesystem::path cwd = std::filesystem::current_path();
+    std::filesystem::current_path(inst.minecraftPath());
+    pid_t pid = fork();
+    if (pid == 0) {
+        std::cout << execvp(java_manager.find_java(inst.javaVersion()).c_str(), args) << std::endl;
+        exit(1);
+    }
+    std::filesystem::current_path(cwd);
+return 0;
     std::filesystem::path test_sh = "/mnt/80E8EEBFE8EEB298/Minecraft/.minecraft/testlaunch.sh";
-    std::ofstream ofs;
-    ofs.open(test_sh);
-    ofs.write(output.data(), output.size());
+    std::ofstream ofs(test_sh, std::ios::out);
+    ofs.write(java_manager.find_java(inst.javaVersion()).c_str(), java_manager.find_java(inst.javaVersion()).size());
+    ofs.write(" ", 1);
+    for (auto& i : output) {
+        std::string k = i;
+        k = Strings::replace_all(k, "\\", "\\\\");
+        k = Strings::replace_all(k, "\"", "\\\"");
+        k = Strings::replace_all(k, "$", "\\$");
+        k = Strings::replace_all(k, ";", "\\;");
+        k = Strings::replace_all(k, " ", "\\ ");
+        k = Strings::replace_all(k, "`", "\\`");
+        k = Strings::replace_all(k, "!", "\\!");
+        ofs.write(k.data(), k.size());
+        ofs.write(" ", 1);
+    }
     ofs.close();
-    std::cout << "?" << std::endl;
-
+    return 0;
 };
