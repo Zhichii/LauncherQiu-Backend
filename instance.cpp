@@ -7,6 +7,18 @@
 #include "config.hpp"
 #include "strings.hpp"
 
+InstanceContext::InstanceContext(size_t window_width, size_t window_height, size_t memory) {
+    _window_width = window_width;
+    _window_height = window_height;
+    _memory = memory;
+}
+
+size_t InstanceContext::windowWidth() { return _window_width; }
+
+size_t InstanceContext::windowHeight() { return _window_height; }
+
+size_t InstanceContext::memory() { return _memory; }
+
 Instance::File::File()  {
     _url = "";
     _sha1 = "";
@@ -164,7 +176,7 @@ bool Instance::LibraryItem::extractNatives(Instance& instance) {
     return true;
 }
 
-std::string Instance::LibraryItem::name() {
+std::string Instance::LibraryItem::name() const {
     std::vector<std::string> name_split = Strings::split(_name, ":");
     std::string org = name_split[0];
     std::string artifact = name_split[1];
@@ -174,6 +186,12 @@ std::string Instance::LibraryItem::name() {
     } else { // 无 classifier
         return org + ":" + artifact;
     }
+}
+
+std::string Instance::LibraryItem::version() const {
+    std::vector<std::string> name_split = Strings::split(_name, ":");
+    if (name_split.size() >= 3) return name_split[2];
+    else return "";
 }
 
 std::filesystem::path Instance::LibraryItem::finalLibPath(std::filesystem::path minecraft_path) {
@@ -225,17 +243,17 @@ Instance::ArgumentItem::ArgumentItem(Json::Value json) {
     }
 }
 
-bool Instance::ArgumentItem::allow(std::vector<Rule::Feature> features) {
+bool Instance::ArgumentItem::allow(std::vector<Rule::Feature> features) const {
     bool allow = false;
-    for (Rule& i : _rules) {
+    for (const Rule& i : _rules) {
         i.act(allow, features);
     }
     return allow;
 }
 
-std::vector<std::string> Instance::ArgumentItem::value() { return _value; }
+std::vector<std::string> Instance::ArgumentItem::value() const { return _value; }
 
-void Instance::init(Json::Value info) {
+void Instance::init(const Json::Value& info) {
     // 我认为，无论发生什么错误，我们先用空值代替。
     // 因为有个东西叫_patches
     if (!info.isObject()) return; // 但这个实在没办法。
@@ -251,7 +269,7 @@ void Instance::init(Json::Value info) {
         if (info["javaVersion"].isMember("majorVersion") && info["javaVersion"]["majorVersion"].isInt()) _java_version = info["javaVersion"]["majorVersion"].asInt();
     }
     if (info.isMember("downloads") && info["downloads"].isObject()) {
-        Json::Value& downloads = info["downloads"];
+        const Json::Value& downloads = info["downloads"];
         if (downloads.isMember("client_mappings") && downloads["client_mappings"].isObject()) _client_mappings = File(downloads["client_mappings"]);
         if (downloads.isMember("server_mappings") && downloads["client_mappings"].isObject()) _server_mappings = File(downloads["server_mappings"]);
         if (downloads.isMember("client")) _client = File(downloads["client"]);
@@ -293,11 +311,14 @@ void Instance::init(Json::Value info) {
     }
     // Patches可能是HMCL拓展
     if (info.isMember("patches") && info["patches"].isArray()) {
-        for (Json::Value& patch : info["patches"]) {
+        for (const Json::Value& patch : info["patches"]) {
             _patches.push_back(std::make_unique<Instance>(patch));
         }
     }
     if (info.isMember("version")) _patch_version = info["version"].asString();
+    else {
+        _detected_patches = Patches(*this);
+    }
     if (info.isMember("priority")) _patch_priority = info["priority"].asInt();
 }
 
@@ -315,7 +336,7 @@ Instance::Instance(std::filesystem::path minecraft_path, std::string instance_na
     init(root);
 }
 
-Instance::Instance(Json::Value& json) {
+Instance::Instance(const Json::Value& json) {
     init(json);
 }
 
@@ -377,18 +398,6 @@ void Instance::generateGameArguments(std::vector<std::string>& output, const std
     //}
 }
 
-InstanceContext::InstanceContext(size_t window_width, size_t window_height, size_t memory) {
-    _window_width = window_width;
-    _window_height = window_height;
-    _memory = memory;
-}
-
-size_t InstanceContext::windowWidth() { return _window_width; }
-
-size_t InstanceContext::windowHeight() { return _window_height; }
-
-size_t InstanceContext::memory() { return _memory; }
-
 void Instance::generateLaunchArguments(std::vector<std::string>& output, InstanceContext& context, AccountsManager& account_manager, const std::vector<Rule::Feature> features) {
     printf("Started geenerating launch arguments: %s, \"%s\".\n", _instance_name.c_str(), _minecraft_path.c_str());
     std::filesystem::path instance_path = "versions"; instance_path /= _instance_name;
@@ -440,23 +449,253 @@ void Instance::generateLaunchArguments(std::vector<std::string>& output, Instanc
     output.push_back(_main_class);
     printf("Start generating game arguments.\n");
     generateGameArguments(output, features, game_values);
-    if (std::find(output.begin(), output.end(), "-Djava.library.path") != output.end()) {
-        output.push_back("-Djava.library.path="+native_path.string());
+    {
+        bool flag = false;
+        for (const auto& arg : output) {
+            if (arg.starts_with("-Djava.library.path=")) {
+                flag = true;
+                break;
+            }
+        }
+        if (!flag) {
+            output.push_back("-Djava.library.path=" + native_path.string());
+        }
     }
     printf("Launch command was successfully generated.\n");
 }
 
-bool Instance::modded() {
-    if (_main_class == "net.minecraft.client.main.Main") return false;
-    // 嗯，即使安装了Fabric，如果mainClass没有修改，那不还是白费吗！
-    return true;
+// Fabric的
+
+Instance::Patches::Fabric::Fabric() {}
+
+Instance::Patches::Fabric::Fabric(std::string version) {
+    auto v = Strings::split(version, ".");
+    if (v.size() >= 1) _major = std::atoi(v[0].c_str());
+    if (v.size() >= 2) _minor = std::atoi(v[1].c_str());
+    if (v.size() >= 3) _patch = std::atoi(v[2].c_str());
 }
 
-std::vector<Instance::PatchData> Instance::detectPatches() {
-    if (_patches.size()) {
-        // 这个是HMCL的
-        for (auto& i : _patches) {
-            
+unsigned short Instance::Patches::Fabric::major() const { return _major; }
+
+unsigned short Instance::Patches::Fabric::minor() const { return _minor; }
+
+unsigned short Instance::Patches::Fabric::patch() const { return _patch; }
+
+std::string Instance::Patches::Fabric::version() const {
+    std::ostringstream oss;
+    oss << major() << "." << minor() << "." << patch();
+    return oss.str();
+}
+
+bool Instance::Patches::Fabric::state() const { return !((_major == 65535) || (_minor == 65535) || (_patch == 65535)); }
+
+// FeatherLoader的
+
+Instance::Patches::Feather::Feather() {}
+
+Instance::Patches::Feather::Feather(std::string version) {
+    auto v = Strings::split(version, ".");
+    if (v.size() >= 1) _a = std::atoi(v[0].c_str());
+    if (v.size() >= 2) _b = std::atoi(v[1].c_str());
+    if (v.size() >= 3) _c = std::atoi(v[2].c_str());
+}
+
+unsigned short Instance::Patches::Feather::a() const { return _a; }
+
+unsigned short Instance::Patches::Feather::b() const { return _b; }
+
+unsigned short Instance::Patches::Feather::c() const { return _c; }
+
+std::string Instance::Patches::Feather::version() const {
+    std::ostringstream oss;
+    oss << a() << "." << b() << "." << c();
+    return oss.str();
+}
+
+bool Instance::Patches::Feather::state() const { return !((_a == 65535) || (_b == 65535) || (_c == 65535)); }
+
+// NeoForge的
+
+Instance::Patches::NeoForge::NeoForge() {}
+
+Instance::Patches::NeoForge::NeoForge(std::string version) {
+    auto u = Strings::split(version, "-");
+    if (u.size() >= 1){
+        auto v = Strings::split(u[0], ".");
+        if (v.size() >= 1) _major = std::atoi(v[0].c_str());
+        if (v.size() >= 2) _minor = std::atoi(v[1].c_str());
+        if (v.size() >= 3) _patch = std::atoi(v[2].c_str());
+    }
+    if (u.size() >= 2){
+        if (u[1] == "beta") _beta = true;
+    }
+}
+
+unsigned short Instance::Patches::NeoForge::major() const { return _major; }
+
+unsigned short Instance::Patches::NeoForge::minor() const { return _minor; }
+
+unsigned short Instance::Patches::NeoForge::patch() const { return _patch; }
+
+bool Instance::Patches::NeoForge::beta() const { return _beta; }
+
+std::string Instance::Patches::NeoForge::version() const {
+    std::ostringstream oss;
+    oss << major() << "." << minor() << "." << patch();
+    if (beta()) oss << "-beta";
+    return oss.str();
+}
+
+bool Instance::Patches::NeoForge::state() const { return !((_major == 65535) || (_minor == 65535) || (_patch == 65535)); }
+
+// Forge的
+
+Instance::Patches::Forge::Forge() {}
+
+Instance::Patches::Forge::Forge(std::string version) {
+    auto v = Strings::split(version, ".");
+    if (v.size() >= 1) _major = std::atoi(v[0].c_str());
+    if (v.size() >= 2) _minor = std::atoi(v[1].c_str());
+    if (v.size() >= 3) _patch = std::atoi(v[2].c_str());
+    if (v.size() >= 4) _small = std::atoi(v[3].c_str());
+}
+
+unsigned short Instance::Patches::Forge::major() const { return _major; }
+
+unsigned short Instance::Patches::Forge::minor() const { return _minor; }
+
+unsigned short Instance::Patches::Forge::patch() const { return _patch; }
+
+unsigned short Instance::Patches::Forge::small() const { return _small; }
+
+std::string Instance::Patches::Forge::version() const {
+    std::ostringstream oss;
+    oss << major() << "." << minor() << "." << patch();
+    if (small() != 65535) oss << "." << small();
+    return oss.str();
+}
+
+bool Instance::Patches::Forge::state() const { return !((_major == 65535) || (_minor == 65535) || (_patch == 65535)); }
+
+// OptiFine的
+
+Instance::Patches::OptiFine::OptiFine() {}
+
+Instance::Patches::OptiFine::OptiFine(std::string version) {
+    if (version.size() >= 6) _series = version[5];
+    if (version.size() >= 7) _number = version[6] - '0';
+    if (version.size() >= 12) _pre = version[11] - '0';
+}
+
+char Instance::Patches::OptiFine::series() const { return _series; }
+
+unsigned short Instance::Patches::OptiFine::number() const { return _number; }
+
+unsigned short Instance::Patches::OptiFine::pre() const { return _pre; }
+
+std::string Instance::Patches::OptiFine::version() const {
+    std::ostringstream oss;
+    oss << "HD_U_" << series() << number();
+    if (pre() != 65535) oss << "_pre" << pre();
+    return oss.str();
+}
+
+bool Instance::Patches::OptiFine::state() const { return !((_series == 127) || (_number == 65535)); }
+
+// 处理Patches
+
+Instance::Patches::Patches() {}
+
+Instance::Patches::Patches(const Instance& instance) {
+    if (false) { //instance._patches.size()) {
+        // 这个是HMCL的。如果有的话就以它为准了。
+        for (auto& i : instance._patches) {
+            if (i->id() == "fabric") {
+                _fabric = Fabric(i->_patch_version);
+            }
+            if (i->id() == "neoforge") {
+                _neoforge = NeoForge(i->_patch_version);
+            }
+            if (i->id() == "forge") {
+                _forge = Forge(i->_patch_version);
+            }
+            if (i->id() == "optifine") {
+                _optifine = OptiFine(i->_patch_version);
+            }
         }
     }
+    else {
+        // 我们需要手动扫描库
+        for (auto& library_item : instance._libraries) {
+            if (library_item.name() == "net.fabricmc:fabric-loader") {
+                _fabric = Fabric(library_item.version());
+            }
+            if (library_item.name() == "net.featherloader:feather-loader") {
+                _feather = Feather(library_item.version());
+            }
+            if (library_item.name() == "net.minecraftforge:forge") {
+                auto u = Strings::split(library_item.version(), "-");
+                if (u.size() >= 2) {
+                    _forge = Forge(u[1]);
+                }
+            }
+            if (library_item.name() == "optifine:OptiFine" ||
+                library_item.name() == "optifine:OptiFine:installer") {
+                if (Strings::count(library_item.version(), "_") != 0) {
+                    size_t idx = library_item.version().find("_")+1;
+                    auto u = library_item.version().substr(idx);
+                    _optifine = OptiFine(u);
+                }
+            }
+        }
+        // 或游戏参数
+        std::string previous;
+        for (auto& game_argument : instance._game_arguments) {
+            if (previous == "--fml.neoForgeVersion") {
+                if (game_argument.value().size() >= 1) {
+                    _neoforge = NeoForge(game_argument.value()[0]);
+                }
+            }
+            if (previous == "--fml.forgeVersion") {
+                if (game_argument.value().size() >= 1) {
+                    _forge = Forge(game_argument.value()[0]);
+                }
+            }
+            if (game_argument.value().size() >= 1) {
+                previous = game_argument.value()[0];
+            }
+        }
+        // 或JVM参数
+        for (auto& jvm_argument : instance._jvm_arguments) {
+            if (jvm_argument.value().size() >= 1) {
+                auto q = jvm_argument.value()[0];
+                if (q.starts_with("-Dhmcl.transformer.candidates=${library_directory}/optifine/OptiFine")) {
+                    auto p = q.substr(69);
+                    if (Strings::count(p, "/") != 0) {
+                        size_t idx = p.find('/');
+                        auto r = p.substr(0, idx);
+                        if (Strings::count(r, "_") != 0) {
+                            size_t idx2 = r.find("_")+1;
+                            auto u = r.substr(idx2);
+                            _optifine = OptiFine(u);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+const Instance::Patches::Fabric& Instance::Patches::fabric() const { return _fabric; }
+
+const Instance::Patches::Feather& Instance::Patches::feather() const { return _feather; }
+
+const Instance::Patches::NeoForge& Instance::Patches::neoforge() const { return _neoforge; }
+
+const Instance::Patches::Forge& Instance::Patches::forge() const { return _forge; }
+
+const Instance::Patches::OptiFine& Instance::Patches::optifine() const { return _optifine; }
+
+const Instance::Patches& Instance::patches() {
+    return _detected_patches;
 }

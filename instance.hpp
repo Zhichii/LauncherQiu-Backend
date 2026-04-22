@@ -15,13 +15,6 @@ public:
 	size_t memory(); // Megabytes
 };
 
-class Version {
-	static Version Release_2011();
-	static Version Release_2011();
-	static Version Release_2026();
-	static Version Snapshot_2026();
-};
-
 class Instance {
 public:
     class File {
@@ -65,7 +58,8 @@ public:
 	public:
 		LibraryItem(Json::Value json);
 		bool extractNatives(Instance& instance);
-		std::string name(); // 和_name不一样的是，这个会去除版本，只保留真正的名字。
+		std::string name() const; // 和_name不一样的是，这个会去除版本，只保留真正的名字。
+		std::string version() const;
 		std::filesystem::path finalLibPath(std::filesystem::path minecraft_path);
 		bool allow(std::vector<Rule::Feature> features);
 	};
@@ -74,8 +68,80 @@ public:
 		std::vector<Rule> _rules;
 	public:
 		ArgumentItem(Json::Value json);
-		bool allow(std::vector<Rule::Feature> features);
-		std::vector<std::string> value();
+		bool allow(std::vector<Rule::Feature> features) const;
+		std::vector<std::string> value() const;
+	};
+	class Patches {
+	public:
+		class Fabric {
+			unsigned short _major = 65535, _minor = 65535, _patch = 65535;
+			unsigned short major() const;
+			unsigned short minor() const;
+			unsigned short patch() const;
+		public:
+			Fabric();
+			Fabric(std::string version);
+			std::string version() const;
+			bool state() const;
+		} _fabric;
+		class Feather { // 我自己瞎写的模组加载器哦（至少实现了注入！）。感兴趣的可以联系我。
+			unsigned short _a = 65535, _b = 65535, _c = 65535;
+			unsigned short a() const;
+			unsigned short b() const;
+			unsigned short c() const;
+		public:
+			Feather();
+			Feather(std::string version);
+			std::string version() const;
+			bool state() const;
+		} _feather;
+		class NeoForge {
+			unsigned short _major = 65535, _minor = 65535, _patch = 65535;
+			bool _beta = false;
+			unsigned short major() const;
+			unsigned short minor() const;
+			unsigned short patch() const;
+			bool beta() const;
+		public:
+			NeoForge();
+			NeoForge(std::string version);
+			std::string version() const;
+			bool state() const;
+		} _neoforge;
+		class Forge {
+			unsigned short _major = 65535, _minor = 65535, _patch = 65535, _small = 65535;
+			unsigned short major() const;
+			unsigned short minor() const;
+			unsigned short patch() const;
+			unsigned short small() const;
+		public:
+			Forge();
+			Forge(std::string version);
+			std::string version() const;
+			bool state() const;
+		} _forge;
+		class OptiFine {
+			char _series = 127;
+			unsigned short _number = 65535;
+			unsigned short _pre = 65535;
+			char series() const;
+			unsigned short number() const;
+			unsigned short pre() const;
+		public:
+			OptiFine();
+			OptiFine(std::string version);
+			std::string version() const;
+			bool state() const;
+		} _optifine;
+	private:
+	public:
+		Patches();
+		Patches(const Instance& info);
+		const Fabric& fabric() const;
+		const Feather& feather() const;
+		const NeoForge& neoforge() const;
+		const Forge& forge() const;
+		const OptiFine& optifine() const;
 	};
 private:
 	std::filesystem::path _minecraft_path;
@@ -100,27 +166,20 @@ private:
 	std::vector<ArgumentItem> _jvm_arguments;
 	std::string _patch_version; // _patches会有这项
 	std::string _patch_priority; // _patches会有这项
+	Patches _detected_patches;
 	std::vector<std::unique_ptr<Instance>> _patches;
-	void init(Json::Value info);
+	void init(const Json::Value& info);
 	std::string generateClassPath(const std::vector<Rule::Feature>& features);
 	void generateJVMArguments(std::vector<std::string>& output, const std::vector<Rule::Feature>& features, std::map<std::string,std::string>& jvm_values);
 	void generateGameArguments(std::vector<std::string>& output, const std::vector<Rule::Feature>& features, std::map<std::string, std::string>& game_values);
 public:
     Instance(std::filesystem::path minecraft_path, std::string instance_name);
-    Instance(Json::Value& json);
+    Instance(const Json::Value& json);
 	const std::filesystem::path& minecraftPath();
 	const std::string& instanceName();
 	const std::string& id();
 	const std::string& type();
 	int javaVersion();
+	const Patches& patches();
 	void generateLaunchArguments(std::vector<std::string>& output, InstanceContext& context, AccountsManager& account_manager, const std::vector<Rule::Feature> features);
-	class PatchData {
-		enum Type {
-			VANILLA, FABRIC, FORGE, NEOFORGE, FEATHERLOADER /* FeatherLoader我自己写的 */, 
-		};
-		Type type;
-		std::string version;
-	};
-	bool modded(); // 注意，这只检测mainClass是否不是纯血Minecraft。
-	std::vector<PatchData> detectPatches();
 };
